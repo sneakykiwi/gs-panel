@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 
+	"gs-panel/internal/forms"
 	"gs-panel/internal/middleware"
 	"gs-panel/internal/models"
 	"gs-panel/internal/services"
@@ -17,11 +18,7 @@ type BackupHandler struct {
 }
 
 func NewBackupHandler(backupService *services.BackupService, serverService *services.ServerService, schedulerService *services.SchedulerService) *BackupHandler {
-	return &BackupHandler{
-		backupService:    backupService,
-		serverService:    serverService,
-		schedulerService: schedulerService,
-	}
+	return &BackupHandler{backupService: backupService, serverService: serverService, schedulerService: schedulerService}
 }
 
 func (h *BackupHandler) List(c fiber.Ctx) error {
@@ -35,15 +32,7 @@ func (h *BackupHandler) List(c fiber.Ctx) error {
 		return err
 	}
 
-	return c.Render("partials/backup_list", fiber.Map{
-		"Backups":  backups,
-		"ServerID": serverID,
-	})
-}
-
-type createBackupForm struct {
-	Name        string `form:"name"`
-	Description string `form:"description"`
+	return c.Render("partials/backup_list", fiber.Map{"Backups": backups, "ServerID": serverID})
 }
 
 func (h *BackupHandler) Create(c fiber.Ctx) error {
@@ -52,9 +41,8 @@ func (h *BackupHandler) Create(c fiber.Ctx) error {
 		return fiber.ErrBadRequest
 	}
 
-	var form createBackupForm
+	var form forms.CreateBackup
 	_ = c.Bind().Form(&form)
-
 	if form.Name == "" {
 		form.Name = "Manual Backup"
 	}
@@ -64,9 +52,7 @@ func (h *BackupHandler) Create(c fiber.Ctx) error {
 		return c.Status(fiber.StatusConflict).SendString(err.Error())
 	}
 
-	return c.Render("partials/backup_item", fiber.Map{
-		"Backup": backup,
-	})
+	return c.Render("partials/backup_item", fiber.Map{"Backup": backup})
 }
 
 func (h *BackupHandler) Delete(c fiber.Ctx) error {
@@ -74,11 +60,9 @@ func (h *BackupHandler) Delete(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
-
 	if err := h.backupService.Delete(uint(backupID)); err != nil {
 		return err
 	}
-
 	return c.SendStatus(fiber.StatusOK)
 }
 
@@ -87,11 +71,9 @@ func (h *BackupHandler) Restore(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
-
 	if err := h.backupService.Restore(uint(backupID)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
-
 	return c.SendStatus(fiber.StatusOK)
 }
 
@@ -105,7 +87,6 @@ func (h *BackupHandler) Progress(c fiber.Ctx) error {
 	if progress == nil {
 		return c.JSON(fiber.Map{"status": "idle"})
 	}
-
 	return c.JSON(progress)
 }
 
@@ -119,7 +100,6 @@ func (h *BackupHandler) Verify(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
-
 	return c.JSON(fiber.Map{"valid": valid})
 }
 
@@ -134,22 +114,13 @@ func (h *BackupHandler) ListSchedules(c fiber.Ctx) error {
 		return err
 	}
 
-	user := middleware.GetUser(c)
 	server, _ := h.serverService.Get(uint(serverID))
-
 	return c.Render("servers/schedules", fiber.Map{
 		"Title":     "Backup Schedules",
-		"User":      user,
+		"User":      middleware.GetUser(c),
 		"Server":    server,
 		"Schedules": schedules,
 	})
-}
-
-type createScheduleForm struct {
-	Name      string `form:"name"`
-	CronExpr  string `form:"cron_expr"`
-	KeepCount int    `form:"keep_count"`
-	KeepDays  int    `form:"keep_days"`
 }
 
 func (h *BackupHandler) CreateSchedule(c fiber.Ctx) error {
@@ -158,13 +129,12 @@ func (h *BackupHandler) CreateSchedule(c fiber.Ctx) error {
 		return fiber.ErrBadRequest
 	}
 
-	var form createScheduleForm
+	var form forms.CreateSchedule
 	if err := c.Bind().Form(&form); err != nil {
 		return fiber.ErrBadRequest
 	}
 
-	_, err = h.schedulerService.CreateSchedule(uint(serverID), form.Name, form.CronExpr, form.KeepCount, form.KeepDays)
-	if err != nil {
+	if _, err = h.schedulerService.CreateSchedule(uint(serverID), form.Name, form.CronExpr, form.KeepCount, form.KeepDays); err != nil {
 		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
 	}
 
@@ -176,16 +146,10 @@ func (h *BackupHandler) DeleteSchedule(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
-
 	if err := h.schedulerService.DeleteSchedule(uint(scheduleID)); err != nil {
 		return err
 	}
-
 	return c.SendStatus(fiber.StatusOK)
-}
-
-type toggleScheduleForm struct {
-	Enabled string `form:"enabled"`
 }
 
 func (h *BackupHandler) ToggleSchedule(c fiber.Ctx) error {
@@ -194,14 +158,11 @@ func (h *BackupHandler) ToggleSchedule(c fiber.Ctx) error {
 		return fiber.ErrBadRequest
 	}
 
-	var form toggleScheduleForm
+	var form forms.ToggleSchedule
 	_ = c.Bind().Form(&form)
 
-	enabled := form.Enabled == "true"
-
-	if err := h.schedulerService.ToggleSchedule(uint(scheduleID), enabled); err != nil {
+	if err := h.schedulerService.ToggleSchedule(uint(scheduleID), form.Enabled == "true"); err != nil {
 		return err
 	}
-
 	return c.SendStatus(fiber.StatusOK)
 }

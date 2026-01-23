@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 
+	"gs-panel/internal/forms"
 	"gs-panel/internal/middleware"
 	"gs-panel/internal/services"
 
@@ -15,15 +16,11 @@ type ServerHandler struct {
 }
 
 func NewServerHandler(serverService *services.ServerService, templateService *services.TemplateService) *ServerHandler {
-	return &ServerHandler{
-		serverService:   serverService,
-		templateService: templateService,
-	}
+	return &ServerHandler{serverService: serverService, templateService: templateService}
 }
 
 func (h *ServerHandler) Dashboard(c fiber.Ctx) error {
 	user := middleware.GetUser(c)
-
 	var servers interface{}
 	var err error
 
@@ -32,45 +29,28 @@ func (h *ServerHandler) Dashboard(c fiber.Ctx) error {
 	} else {
 		servers, err = h.serverService.ListForUser(user.ID)
 	}
-
 	if err != nil {
 		return err
 	}
 
-	return c.Render("dashboard", fiber.Map{
-		"Title":   "Dashboard",
-		"User":    user,
-		"Servers": servers,
-	})
+	return c.Render("dashboard", fiber.Map{"Title": "Dashboard", "User": user, "Servers": servers})
 }
 
 func (h *ServerHandler) CreatePage(c fiber.Ctx) error {
-	user := middleware.GetUser(c)
-	templates := h.templateService.List()
-
 	return c.Render("servers/create", fiber.Map{
 		"Title":     "Create Server",
-		"User":      user,
-		"Templates": templates,
+		"User":      middleware.GetUser(c),
+		"Templates": h.templateService.List(),
 	})
 }
 
-type createServerForm struct {
-	Name        string `form:"name"`
-	GameType    string `form:"game_type"`
-	MemoryLimit int    `form:"memory_limit"`
-	Port        int    `form:"port"`
-}
-
 func (h *ServerHandler) Create(c fiber.Ctx) error {
-	var form createServerForm
+	var form forms.CreateServer
 	if err := c.Bind().Form(&form); err != nil {
-		user := middleware.GetUser(c)
-		templates := h.templateService.List()
 		return c.Render("servers/create", fiber.Map{
 			"Title":     "Create Server",
-			"User":      user,
-			"Templates": templates,
+			"User":      middleware.GetUser(c),
+			"Templates": h.templateService.List(),
 			"Error":     "Invalid form data",
 		})
 	}
@@ -81,14 +61,11 @@ func (h *ServerHandler) Create(c fiber.Ctx) error {
 		MemoryLimit: form.MemoryLimit,
 		Port:        form.Port,
 	})
-
 	if err != nil {
-		user := middleware.GetUser(c)
-		templates := h.templateService.List()
 		return c.Render("servers/create", fiber.Map{
 			"Title":     "Create Server",
-			"User":      user,
-			"Templates": templates,
+			"User":      middleware.GetUser(c),
+			"Templates": h.templateService.List(),
 			"Error":     err.Error(),
 		})
 	}
@@ -107,14 +84,12 @@ func (h *ServerHandler) View(c fiber.Ctx) error {
 		return fiber.ErrNotFound
 	}
 
-	h.serverService.SyncStatus(server.ID)
+	_ = h.serverService.SyncStatus(server.ID)
 	server, _ = h.serverService.Get(uint(id))
-
-	user := middleware.GetUser(c)
 
 	return c.Render("servers/view", fiber.Map{
 		"Title":  server.Name,
-		"User":   user,
+		"User":   middleware.GetUser(c),
 		"Server": server,
 	})
 }
@@ -124,11 +99,9 @@ func (h *ServerHandler) Delete(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
-
 	if err := h.serverService.Delete(uint(id)); err != nil {
 		return err
 	}
-
 	return c.Redirect().To("/")
 }
 
@@ -137,15 +110,11 @@ func (h *ServerHandler) Start(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
-
 	if err := h.serverService.Start(uint(id)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
-
 	server, _ := h.serverService.Get(uint(id))
-	return c.Render("partials/server_status", fiber.Map{
-		"Server": server,
-	})
+	return c.Render("partials/server_status", fiber.Map{"Server": server})
 }
 
 func (h *ServerHandler) Stop(c fiber.Ctx) error {
@@ -153,15 +122,11 @@ func (h *ServerHandler) Stop(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
-
 	if err := h.serverService.Stop(uint(id)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
-
 	server, _ := h.serverService.Get(uint(id))
-	return c.Render("partials/server_status", fiber.Map{
-		"Server": server,
-	})
+	return c.Render("partials/server_status", fiber.Map{"Server": server})
 }
 
 func (h *ServerHandler) Restart(c fiber.Ctx) error {
@@ -169,15 +134,11 @@ func (h *ServerHandler) Restart(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
-
 	if err := h.serverService.Restart(uint(id)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
-
 	server, _ := h.serverService.Get(uint(id))
-	return c.Render("partials/server_status", fiber.Map{
-		"Server": server,
-	})
+	return c.Render("partials/server_status", fiber.Map{"Server": server})
 }
 
 func (h *ServerHandler) Status(c fiber.Ctx) error {
@@ -185,14 +146,10 @@ func (h *ServerHandler) Status(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
-
-	h.serverService.SyncStatus(uint(id))
+	_ = h.serverService.SyncStatus(uint(id))
 	server, err := h.serverService.Get(uint(id))
 	if err != nil {
 		return fiber.ErrNotFound
 	}
-
-	return c.Render("partials/server_card", fiber.Map{
-		"Server": server,
-	})
+	return c.Render("partials/server_card", fiber.Map{"Server": server})
 }

@@ -68,11 +68,6 @@ func main() {
 
 	app.Use("/static", static.New(staticPath))
 
-	app.Use(func(c fiber.Ctx) error {
-		log.Printf("%s %s", c.Method(), c.Path())
-		return c.Next()
-	})
-
 	authHandler := handlers.NewAuthHandler(authService)
 	serverHandler := handlers.NewServerHandler(serverService, templateService)
 	backupHandler := handlers.NewBackupHandler(backupService, serverService, schedulerService)
