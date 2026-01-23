@@ -3,7 +3,6 @@ package services
 import (
 	"bufio"
 	"context"
-	"io"
 	"sync"
 
 	"github.com/moby/moby/client"
@@ -84,25 +83,4 @@ func (s *ConsoleService) StreamLogs(ctx context.Context, containerID string, ser
 	}
 
 	return scanner.Err()
-}
-
-func (s *ConsoleService) SendCommand(ctx context.Context, containerID string, command string) error {
-	exec, err := s.docker.ContainerExecCreate(ctx, containerID, client.ContainerExecOptions{
-		Cmd:          []string{"/bin/sh", "-c", command},
-		AttachStdout: true,
-		AttachStderr: true,
-	})
-	if err != nil {
-		return err
-	}
-
-	resp, err := s.docker.ContainerExecAttach(ctx, exec.ExecID, client.ContainerExecAttachOptions{})
-	if err != nil {
-		return err
-	}
-	defer resp.Close()
-
-	io.Copy(io.Discard, resp.Reader)
-
-	return nil
 }

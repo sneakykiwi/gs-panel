@@ -40,7 +40,10 @@ func (s *StatsService) Get(serverID uint) *ContainerStats {
 }
 
 func (s *StatsService) Update(ctx context.Context, serverID uint, containerID string) error {
-	resp, err := s.docker.ContainerStats(ctx, containerID, false)
+	resp, err := s.docker.ContainerStats(ctx, containerID, client.ContainerStatsOptions{
+		Stream:                false,
+		IncludePreviousSample: true,
+	})
 	if err != nil {
 		return err
 	}

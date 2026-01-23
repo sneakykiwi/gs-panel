@@ -55,6 +55,9 @@ func main() {
 	engine.AddFunc("divf", func(a, b int64) float64 {
 		return float64(a) / float64(b)
 	})
+	engine.AddFunc("dirname", func(path string) string {
+		return filepath.Dir(path)
+	})
 
 	app := fiber.New(fiber.Config{
 		Views:       engine,
@@ -67,6 +70,7 @@ func main() {
 	serverHandler := handlers.NewServerHandler(serverService, templateService)
 	backupHandler := handlers.NewBackupHandler(backupService, serverService)
 	adminHandler := handlers.NewAdminHandler(authService, serverService)
+	filesHandler := handlers.NewFilesHandler(serverService, cfg)
 
 	app.Get("/login", authHandler.LoginPage)
 	app.Post("/login", authHandler.Login)
@@ -89,6 +93,12 @@ func main() {
 	protected.Delete("/backups/:backupId", backupHandler.Delete)
 	protected.Post("/backups/:backupId/restore", backupHandler.Restore)
 	protected.Get("/backups/:backupId/verify", backupHandler.Verify)
+	protected.Get("/servers/:id/files", filesHandler.List)
+	protected.Get("/servers/:id/files/view", filesHandler.View)
+	protected.Post("/servers/:id/files/save", filesHandler.Save)
+	protected.Post("/servers/:id/files/upload", filesHandler.Upload)
+	protected.Post("/servers/:id/files/mkdir", filesHandler.CreateDir)
+	protected.Delete("/servers/:id/files", filesHandler.Delete)
 
 	admin := protected.Group("", middleware.AdminOnly())
 	admin.Delete("/servers/:id", serverHandler.Delete)

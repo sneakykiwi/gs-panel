@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -234,8 +235,8 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 
 	hostConfig := &container.HostConfig{
 		PortBindings: network.PortMap{
-			tcpPort: []network.PortBinding{{HostIP: "0.0.0.0", HostPort: portStr}},
-			udpPort: []network.PortBinding{{HostIP: "0.0.0.0", HostPort: portStr}},
+			tcpPort: []network.PortBinding{{HostIP: netip.MustParseAddr("0.0.0.0"), HostPort: portStr}},
+			udpPort: []network.PortBinding{{HostIP: netip.MustParseAddr("0.0.0.0"), HostPort: portStr}},
 		},
 		Mounts: []mount.Mount{
 			{
