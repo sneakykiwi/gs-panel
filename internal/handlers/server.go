@@ -55,17 +55,31 @@ func (h *ServerHandler) CreatePage(c fiber.Ctx) error {
 	})
 }
 
+type createServerForm struct {
+	Name        string `form:"name"`
+	GameType    string `form:"game_type"`
+	MemoryLimit int    `form:"memory_limit"`
+	Port        int    `form:"port"`
+}
+
 func (h *ServerHandler) Create(c fiber.Ctx) error {
-	name := c.FormValue("name")
-	gameType := c.FormValue("game_type")
-	memoryLimit, _ := strconv.Atoi(c.FormValue("memory_limit"))
-	port, _ := strconv.Atoi(c.FormValue("port"))
+	var form createServerForm
+	if err := c.Bind().Form(&form); err != nil {
+		user := middleware.GetUser(c)
+		templates := h.templateService.List()
+		return c.Render("servers/create", fiber.Map{
+			"Title":     "Create Server",
+			"User":      user,
+			"Templates": templates,
+			"Error":     "Invalid form data",
+		})
+	}
 
 	_, err := h.serverService.Create(services.CreateServerRequest{
-		Name:        name,
-		GameType:    gameType,
-		MemoryLimit: memoryLimit,
-		Port:        port,
+		Name:        form.Name,
+		GameType:    form.GameType,
+		MemoryLimit: form.MemoryLimit,
+		Port:        form.Port,
 	})
 
 	if err != nil {

@@ -41,19 +41,25 @@ func (h *BackupHandler) List(c fiber.Ctx) error {
 	})
 }
 
+type createBackupForm struct {
+	Name        string `form:"name"`
+	Description string `form:"description"`
+}
+
 func (h *BackupHandler) Create(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
 
-	name := c.FormValue("name")
-	if name == "" {
-		name = "Manual Backup"
-	}
-	description := c.FormValue("description")
+	var form createBackupForm
+	_ = c.Bind().Form(&form)
 
-	backup, err := h.backupService.Create(uint(serverID), name, description, models.BackupTypeManual)
+	if form.Name == "" {
+		form.Name = "Manual Backup"
+	}
+
+	backup, err := h.backupService.Create(uint(serverID), form.Name, form.Description, models.BackupTypeManual)
 	if err != nil {
 		return c.Status(fiber.StatusConflict).SendString(err.Error())
 	}
@@ -139,18 +145,25 @@ func (h *BackupHandler) ListSchedules(c fiber.Ctx) error {
 	})
 }
 
+type createScheduleForm struct {
+	Name      string `form:"name"`
+	CronExpr  string `form:"cron_expr"`
+	KeepCount int    `form:"keep_count"`
+	KeepDays  int    `form:"keep_days"`
+}
+
 func (h *BackupHandler) CreateSchedule(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
 
-	name := c.FormValue("name")
-	cronExpr := c.FormValue("cron_expr")
-	keepCount, _ := strconv.Atoi(c.FormValue("keep_count"))
-	keepDays, _ := strconv.Atoi(c.FormValue("keep_days"))
+	var form createScheduleForm
+	if err := c.Bind().Form(&form); err != nil {
+		return fiber.ErrBadRequest
+	}
 
-	_, err = h.schedulerService.CreateSchedule(uint(serverID), name, cronExpr, keepCount, keepDays)
+	_, err = h.schedulerService.CreateSchedule(uint(serverID), form.Name, form.CronExpr, form.KeepCount, form.KeepDays)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
 	}
@@ -171,13 +184,20 @@ func (h *BackupHandler) DeleteSchedule(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusOK)
 }
 
+type toggleScheduleForm struct {
+	Enabled string `form:"enabled"`
+}
+
 func (h *BackupHandler) ToggleSchedule(c fiber.Ctx) error {
 	scheduleID, err := strconv.ParseUint(c.Params("scheduleId"), 10, 32)
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
 
-	enabled := c.FormValue("enabled") == "true"
+	var form toggleScheduleForm
+	_ = c.Bind().Form(&form)
+
+	enabled := form.Enabled == "true"
 
 	if err := h.schedulerService.ToggleSchedule(uint(scheduleID), enabled); err != nil {
 		return err

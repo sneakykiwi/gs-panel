@@ -148,6 +148,11 @@ func (h *FilesHandler) View(c fiber.Ctx) error {
 	})
 }
 
+type saveFileForm struct {
+	Path    string `form:"path"`
+	Content string `form:"content"`
+}
+
 func (h *FilesHandler) Save(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
@@ -159,21 +164,27 @@ func (h *FilesHandler) Save(c fiber.Ctx) error {
 		return fiber.ErrNotFound
 	}
 
-	relativePath := c.FormValue("path")
-	content := c.FormValue("content")
+	var form saveFileForm
+	if err := c.Bind().Form(&form); err != nil {
+		return fiber.ErrBadRequest
+	}
 
 	serverPath := filepath.Join(h.cfg.Storage.Servers, server.UUID)
-	fullPath := filepath.Join(serverPath, relativePath)
+	fullPath := filepath.Join(serverPath, form.Path)
 
 	if !strings.HasPrefix(fullPath, serverPath) {
 		return fiber.ErrForbidden
 	}
 
-	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(form.Content), 0644); err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
 
 	return c.SendStatus(fiber.StatusOK)
+}
+
+type uploadForm struct {
+	Path string `form:"path"`
 }
 
 func (h *FilesHandler) Upload(c fiber.Ctx) error {
@@ -187,9 +198,14 @@ func (h *FilesHandler) Upload(c fiber.Ctx) error {
 		return fiber.ErrNotFound
 	}
 
-	relativePath := c.FormValue("path", "/")
+	var form uploadForm
+	_ = c.Bind().Form(&form)
+	if form.Path == "" {
+		form.Path = "/"
+	}
+
 	serverPath := filepath.Join(h.cfg.Storage.Servers, server.UUID)
-	targetDir := filepath.Join(serverPath, relativePath)
+	targetDir := filepath.Join(serverPath, form.Path)
 
 	if !strings.HasPrefix(targetDir, serverPath) {
 		return fiber.ErrForbidden
@@ -221,7 +237,7 @@ func (h *FilesHandler) Upload(c fiber.Ctx) error {
 		return err
 	}
 
-	return c.Redirect().To("/servers/" + c.Params("id") + "/files?path=" + relativePath)
+	return c.Redirect().To("/servers/" + c.Params("id") + "/files?path=" + form.Path)
 }
 
 func (h *FilesHandler) Delete(c fiber.Ctx) error {
@@ -254,6 +270,11 @@ func (h *FilesHandler) Delete(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusOK)
 }
 
+type createDirForm struct {
+	Path string `form:"path"`
+	Name string `form:"name"`
+}
+
 func (h *FilesHandler) CreateDir(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
@@ -265,15 +286,21 @@ func (h *FilesHandler) CreateDir(c fiber.Ctx) error {
 		return fiber.ErrNotFound
 	}
 
-	parentPath := c.FormValue("path", "/")
-	dirName := c.FormValue("name")
+	var form createDirForm
+	if err := c.Bind().Form(&form); err != nil {
+		return fiber.ErrBadRequest
+	}
 
-	if dirName == "" {
+	if form.Path == "" {
+		form.Path = "/"
+	}
+
+	if form.Name == "" {
 		return fiber.ErrBadRequest
 	}
 
 	serverPath := filepath.Join(h.cfg.Storage.Servers, server.UUID)
-	fullPath := filepath.Join(serverPath, parentPath, dirName)
+	fullPath := filepath.Join(serverPath, form.Path, form.Name)
 
 	if !strings.HasPrefix(fullPath, serverPath) {
 		return fiber.ErrForbidden
@@ -283,5 +310,5 @@ func (h *FilesHandler) CreateDir(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
 
-	return c.Redirect().To("/servers/" + c.Params("id") + "/files?path=" + parentPath)
+	return c.Redirect().To("/servers/" + c.Params("id") + "/files?path=" + form.Path)
 }

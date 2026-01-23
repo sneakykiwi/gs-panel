@@ -44,12 +44,24 @@ func (h *AdminHandler) CreateUserPage(c fiber.Ctx) error {
 	})
 }
 
-func (h *AdminHandler) CreateUser(c fiber.Ctx) error {
-	email := c.FormValue("email")
-	password := c.FormValue("password")
-	isAdmin := c.FormValue("is_admin") == "on"
+type createUserForm struct {
+	Email    string `form:"email"`
+	Password string `form:"password"`
+	IsAdmin  string `form:"is_admin"`
+}
 
-	if len(password) < 8 {
+func (h *AdminHandler) CreateUser(c fiber.Ctx) error {
+	var form createUserForm
+	if err := c.Bind().Form(&form); err != nil {
+		user := middleware.GetUser(c)
+		return c.Render("admin/user_create", fiber.Map{
+			"Title": "Create User",
+			"User":  user,
+			"Error": "Invalid form data",
+		})
+	}
+
+	if len(form.Password) < 8 {
 		user := middleware.GetUser(c)
 		return c.Render("admin/user_create", fiber.Map{
 			"Title": "Create User",
@@ -58,7 +70,8 @@ func (h *AdminHandler) CreateUser(c fiber.Ctx) error {
 		})
 	}
 
-	_, err := h.authService.CreateUser(email, password, isAdmin)
+	isAdmin := form.IsAdmin == "on"
+	_, err := h.authService.CreateUser(form.Email, form.Password, isAdmin)
 	if err != nil {
 		user := middleware.GetUser(c)
 		return c.Render("admin/user_create", fiber.Map{
@@ -125,18 +138,22 @@ func (h *AdminHandler) UserServersPage(c fiber.Ctx) error {
 	})
 }
 
+type assignServerForm struct {
+	ServerID uint `form:"server_id"`
+}
+
 func (h *AdminHandler) AssignServer(c fiber.Ctx) error {
 	userID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
 
-	serverID, err := strconv.ParseUint(c.FormValue("server_id"), 10, 32)
-	if err != nil {
+	var form assignServerForm
+	if err := c.Bind().Form(&form); err != nil {
 		return fiber.ErrBadRequest
 	}
 
-	if err := h.serverService.AssignUser(uint(serverID), uint(userID)); err != nil {
+	if err := h.serverService.AssignUser(form.ServerID, uint(userID)); err != nil {
 		return err
 	}
 
