@@ -25,14 +25,20 @@ func Init(logDir string) error {
 	consoleWriter := zerolog.ConsoleWriter{
 		Out:        os.Stdout,
 		TimeFormat: time.RFC3339,
+		NoColor:    false,
 	}
 
-	multi := io.MultiWriter(consoleWriter, file)
+	fileWriter := zerolog.ConsoleWriter{
+		Out:        file,
+		TimeFormat: time.RFC3339,
+		NoColor:    true,
+	}
+
+	multi := io.MultiWriter(consoleWriter, fileWriter)
 
 	Log = zerolog.New(multi).
 		With().
 		Timestamp().
-		Caller().
 		Logger()
 
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)

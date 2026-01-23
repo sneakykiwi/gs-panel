@@ -26,8 +26,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	printBanner()
-
 	logger.Info().Str("version", "1.0.0").Msg("Starting GS Panel")
 
 	db, err := database.New(cfg)
@@ -73,6 +71,7 @@ func main() {
 	})
 
 	app := fiber.New(fiber.Config{
+		AppName:     "GS Panel",
 		Views:       engine,
 		ViewsLayout: "layouts/base",
 	})
@@ -130,6 +129,9 @@ func main() {
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	logger.Info().Str("address", addr).Msg("Listening on")
+
+	printBanner()
+
 	if err := app.Listen(addr); err != nil {
 		logger.Fatal().Err(err).Msg("Server failed")
 	}
