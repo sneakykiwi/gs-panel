@@ -62,8 +62,8 @@ func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) 
 		req.Port = template.DefaultPort
 	}
 
-	serverUUID := uuid.New().String()
-	serverPath := filepath.Join(s.cfg.Storage.Servers, serverUUID)
+	serverID := uuid.Must(uuid.NewV7()).String()
+	serverPath := filepath.Join(s.cfg.Storage.Servers, serverID)
 	if err := os.MkdirAll(serverPath, 0755); err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) 
 	}
 
 	server := &models.Server{
-		UUID:        serverUUID,
+		ID:          serverID,
 		Name:        req.Name,
 		GameType:    req.GameType,
 		DockerImage: template.DockerImage,
@@ -92,17 +92,9 @@ func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) 
 	return server, nil
 }
 
-func (s *ServerService) Get(id uint) (*models.Server, error) {
+func (s *ServerService) Get(id string) (*models.Server, error) {
 	var server models.Server
-	if err := s.db.First(&server, id).Error; err != nil {
-		return nil, ErrServerNotFound
-	}
-	return &server, nil
-}
-
-func (s *ServerService) GetByUUID(uuid string) (*models.Server, error) {
-	var server models.Server
-	if err := s.db.Where("uuid = ?", uuid).First(&server).Error; err != nil {
+	if err := s.db.First(&server, "id = ?", id).Error; err != nil {
 		return nil, ErrServerNotFound
 	}
 	return &server, nil
@@ -116,15 +108,15 @@ func (s *ServerService) List() ([]models.Server, error) {
 	return servers, nil
 }
 
-func (s *ServerService) ListForUser(userID uint) ([]models.Server, error) {
+func (s *ServerService) ListForUser(userID string) ([]models.Server, error) {
 	var user models.User
-	if err := s.db.Preload("Servers").First(&user, userID).Error; err != nil {
+	if err := s.db.Preload("Servers").First(&user, "id = ?", userID).Error; err != nil {
 		return nil, err
 	}
 	return user.Servers, nil
 }
 
-func (s *ServerService) Delete(id uint) error {
+func (s *ServerService) Delete(id string) error {
 	server, err := s.Get(id)
 	if err != nil {
 		return err
@@ -141,13 +133,13 @@ func (s *ServerService) Delete(id uint) error {
 		s.docker.ContainerRemove(ctx, server.ContainerID, client.ContainerRemoveOptions{Force: true})
 	}
 
-	serverPath := filepath.Join(s.cfg.Storage.Servers, server.UUID)
+	serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
 	os.RemoveAll(serverPath)
 
 	return s.db.Delete(server).Error
 }
 
-func (s *ServerService) Start(id uint) error {
+func (s *ServerService) Start(id string) error {
 	server, err := s.Get(id)
 	if err != nil {
 		return err
@@ -173,7 +165,7 @@ func (s *ServerService) Start(id uint) error {
 	return s.db.Save(server).Error
 }
 
-func (s *ServerService) Stop(id uint) error {
+func (s *ServerService) Stop(id string) error {
 	server, err := s.Get(id)
 	if err != nil {
 		return err
@@ -194,7 +186,7 @@ func (s *ServerService) Stop(id uint) error {
 	return s.db.Save(server).Error
 }
 
-func (s *ServerService) Restart(id uint) error {
+func (s *ServerService) Restart(id string) error {
 	if err := s.Stop(id); err != nil {
 		return err
 	}
@@ -214,7 +206,7 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 		envList = append(envList, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	serverPath := filepath.Join(s.cfg.Storage.Servers, server.UUID)
+	serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
 	tcpPort := network.MustParsePort(fmt.Sprintf("%d/tcp", server.Port))
 	udpPort := network.MustParsePort(fmt.Sprintf("%d/udp", server.Port))
 	portStr := fmt.Sprintf("%d", server.Port)
@@ -256,7 +248,7 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 	networkConfig := &network.NetworkingConfig{}
 
 	resp, err := s.docker.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Name:             fmt.Sprintf("gs-panel-%s", server.UUID),
+		Name:             fmt.Sprintf("gs-panel-%s", server.ID),
 		Config:           containerConfig,
 		HostConfig:       hostConfig,
 		NetworkingConfig: networkConfig,
@@ -268,15 +260,15 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 	return resp.ID, nil
 }
 
-func (s *ServerService) AssignUser(serverID, userID uint) error {
+func (s *ServerService) AssignUser(serverID, userID string) error {
 	return s.db.Exec("INSERT OR IGNORE INTO server_users (server_id, user_id) VALUES (?, ?)", serverID, userID).Error
 }
 
-func (s *ServerService) UnassignUser(serverID, userID uint) error {
+func (s *ServerService) UnassignUser(serverID, userID string) error {
 	return s.db.Exec("DELETE FROM server_users WHERE server_id = ? AND user_id = ?", serverID, userID).Error
 }
 
-func (s *ServerService) SyncStatus(id uint) error {
+func (s *ServerService) SyncStatus(id string) error {
 	server, err := s.Get(id)
 	if err != nil {
 		return err

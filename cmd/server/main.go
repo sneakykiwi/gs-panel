@@ -133,7 +133,7 @@ func main() {
 
 	printBanner()
 
-	if err := app.Listen(addr); err != nil {
+	if err := app.Listen(addr, fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
 		logger.Fatal().Err(err).Msg("Server failed")
 	}
 }

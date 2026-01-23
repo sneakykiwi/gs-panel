@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"gs-panel/internal/config"
@@ -33,12 +32,12 @@ func NewFilesHandler(serverService *services.ServerService, cfg *config.Config) 
 	return &FilesHandler{serverService: serverService, cfg: cfg}
 }
 
-func (h *FilesHandler) getServerPath(serverID uint) (string, error) {
+func (h *FilesHandler) getServerPath(serverID string) (string, error) {
 	server, err := h.serverService.Get(serverID)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(h.cfg.Storage.Servers, server.UUID), nil
+	return filepath.Join(h.cfg.Storage.Servers, server.ID), nil
 }
 
 func (h *FilesHandler) validatePath(serverPath, relativePath string) (string, error) {
@@ -50,12 +49,12 @@ func (h *FilesHandler) validatePath(serverPath, relativePath string) (string, er
 }
 
 func (h *FilesHandler) List(c fiber.Ctx) error {
-	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	serverID := c.Params("id")
+	if serverID == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
-	server, err := h.serverService.Get(uint(serverID))
+	server, err := h.serverService.Get(serverID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
@@ -65,7 +64,7 @@ func (h *FilesHandler) List(c fiber.Ctx) error {
 		relativePath = "/" + relativePath
 	}
 
-	serverPath := filepath.Join(h.cfg.Storage.Servers, server.UUID)
+	serverPath := filepath.Join(h.cfg.Storage.Servers, server.ID)
 	fullPath, err := h.validatePath(serverPath, relativePath)
 	if err != nil {
 		return err
@@ -114,12 +113,12 @@ func (h *FilesHandler) List(c fiber.Ctx) error {
 }
 
 func (h *FilesHandler) View(c fiber.Ctx) error {
-	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	serverID := c.Params("id")
+	if serverID == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
-	server, err := h.serverService.Get(uint(serverID))
+	server, err := h.serverService.Get(serverID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
@@ -129,7 +128,7 @@ func (h *FilesHandler) View(c fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Path is required")
 	}
 
-	serverPath := filepath.Join(h.cfg.Storage.Servers, server.UUID)
+	serverPath := filepath.Join(h.cfg.Storage.Servers, server.ID)
 	fullPath, err := h.validatePath(serverPath, relativePath)
 	if err != nil {
 		return err
@@ -155,12 +154,12 @@ func (h *FilesHandler) View(c fiber.Ctx) error {
 }
 
 func (h *FilesHandler) Save(c fiber.Ctx) error {
-	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	serverID := c.Params("id")
+	if serverID == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
-	serverPath, err := h.getServerPath(uint(serverID))
+	serverPath, err := h.getServerPath(serverID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
@@ -182,12 +181,12 @@ func (h *FilesHandler) Save(c fiber.Ctx) error {
 }
 
 func (h *FilesHandler) Upload(c fiber.Ctx) error {
-	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	serverID := c.Params("id")
+	if serverID == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
-	serverPath, err := h.getServerPath(uint(serverID))
+	serverPath, err := h.getServerPath(serverID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
@@ -228,16 +227,16 @@ func (h *FilesHandler) Upload(c fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to write file: "+err.Error())
 	}
 
-	return c.Redirect().To("/servers/" + c.Params("id") + "/files?path=" + form.Path)
+	return c.Redirect().To("/servers/" + serverID + "/files?path=" + form.Path)
 }
 
 func (h *FilesHandler) Delete(c fiber.Ctx) error {
-	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	serverID := c.Params("id")
+	if serverID == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
-	serverPath, err := h.getServerPath(uint(serverID))
+	serverPath, err := h.getServerPath(serverID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
@@ -259,12 +258,12 @@ func (h *FilesHandler) Delete(c fiber.Ctx) error {
 }
 
 func (h *FilesHandler) CreateDir(c fiber.Ctx) error {
-	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	serverID := c.Params("id")
+	if serverID == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
-	serverPath, err := h.getServerPath(uint(serverID))
+	serverPath, err := h.getServerPath(serverID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
@@ -289,5 +288,5 @@ func (h *FilesHandler) CreateDir(c fiber.Ctx) error {
 	if err := os.MkdirAll(fullPath, 0755); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create folder: "+err.Error())
 	}
-	return c.Redirect().To("/servers/" + c.Params("id") + "/files?path=" + form.Path)
+	return c.Redirect().To("/servers/" + serverID + "/files?path=" + form.Path)
 }

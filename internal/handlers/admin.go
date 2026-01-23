@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"strconv"
-
 	"gs-panel/internal/forms"
 	"gs-panel/internal/middleware"
 	"gs-panel/internal/services"
@@ -68,30 +66,30 @@ func (h *AdminHandler) CreateUser(c fiber.Ctx) error {
 }
 
 func (h *AdminHandler) DeleteUser(c fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	id := c.Params("id")
+	if id == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	}
 
-	if currentUser := middleware.GetUser(c); currentUser != nil && currentUser.ID == uint(id) {
+	if currentUser := middleware.GetUser(c); currentUser != nil && currentUser.ID == id {
 		return fiber.NewError(fiber.StatusBadRequest, "Cannot delete yourself")
 	}
 
-	if err := h.authService.DeleteUser(uint(id)); err != nil {
+	if err := h.authService.DeleteUser(id); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to delete user: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
 }
 
 func (h *AdminHandler) UserServersPage(c fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	id := c.Params("id")
+	if id == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	}
 
-	targetUser, err := h.authService.GetUserByID(uint(id))
+	targetUser, err := h.authService.GetUserByID(id)
 	if err != nil {
-		return fiber.ErrNotFound
+		return fiber.NewError(fiber.StatusNotFound, "User not found")
 	}
 
 	allServers, err := h.serverService.List()
@@ -99,12 +97,12 @@ func (h *AdminHandler) UserServersPage(c fiber.Ctx) error {
 		return err
 	}
 
-	userServers, err := h.serverService.ListForUser(uint(id))
+	userServers, err := h.serverService.ListForUser(id)
 	if err != nil {
 		return err
 	}
 
-	userServerIDs := make(map[uint]bool)
+	userServerIDs := make(map[string]bool)
 	for _, s := range userServers {
 		userServerIDs[s.ID] = true
 	}
@@ -119,35 +117,35 @@ func (h *AdminHandler) UserServersPage(c fiber.Ctx) error {
 }
 
 func (h *AdminHandler) AssignServer(c fiber.Ctx) error {
-	userID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return fiber.ErrBadRequest
+	userID := c.Params("id")
+	if userID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	}
 
 	var form forms.AssignServer
 	if err := c.Bind().Form(&form); err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid form data")
 	}
 
-	if err := h.serverService.AssignUser(form.ServerID, uint(userID)); err != nil {
-		return err
+	if err := h.serverService.AssignUser(form.ServerID, userID); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to assign server: "+err.Error())
 	}
-	return c.Redirect().To("/admin/users/" + c.Params("id") + "/servers")
+	return c.Redirect().To("/admin/users/" + userID + "/servers")
 }
 
 func (h *AdminHandler) UnassignServer(c fiber.Ctx) error {
-	userID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
-		return fiber.ErrBadRequest
+	userID := c.Params("id")
+	if userID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	}
 
-	serverID, err := strconv.ParseUint(c.Params("serverId"), 10, 32)
-	if err != nil {
-		return fiber.ErrBadRequest
+	serverID := c.Params("serverId")
+	if serverID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
-	if err := h.serverService.UnassignUser(uint(serverID), uint(userID)); err != nil {
-		return err
+	if err := h.serverService.UnassignUser(serverID, userID); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to unassign server: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
 }

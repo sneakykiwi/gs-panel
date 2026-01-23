@@ -3,6 +3,7 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -15,8 +16,7 @@ const (
 )
 
 type Server struct {
-	ID          uint             `gorm:"primarykey" json:"id"`
-	UUID        string           `gorm:"uniqueIndex;not null" json:"uuid"`
+	ID          string           `gorm:"primarykey;size:36" json:"id"`
 	Name        string           `gorm:"not null" json:"name"`
 	GameType    string           `gorm:"not null" json:"game_type"`
 	DockerImage string           `gorm:"not null" json:"docker_image"`
@@ -31,4 +31,11 @@ type Server struct {
 	Users       []User           `gorm:"many2many:server_users;" json:"-"`
 	Backups     []Backup         `gorm:"foreignKey:ServerID" json:"-"`
 	Schedules   []BackupSchedule `gorm:"foreignKey:ServerID" json:"-"`
+}
+
+func (s *Server) BeforeCreate(tx *gorm.DB) error {
+	if s.ID == "" {
+		s.ID = uuid.Must(uuid.NewV7()).String()
+	}
+	return nil
 }

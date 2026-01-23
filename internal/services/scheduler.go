@@ -1,10 +1,10 @@
 package services
 
 import (
-	"log"
 	"sync"
 	"time"
 
+	"gs-panel/internal/logger"
 	"gs-panel/internal/models"
 
 	"github.com/robfig/cron/v3"
@@ -15,7 +15,7 @@ type SchedulerService struct {
 	db            *gorm.DB
 	backupService *BackupService
 	cron          *cron.Cron
-	jobs          map[uint]cron.EntryID
+	jobs          map[string]cron.EntryID
 	mu            sync.Mutex
 }
 
@@ -24,7 +24,7 @@ func NewSchedulerService(db *gorm.DB, backupService *BackupService) *SchedulerSe
 		db:            db,
 		backupService: backupService,
 		cron:          cron.New(),
-		jobs:          make(map[uint]cron.EntryID),
+		jobs:          make(map[string]cron.EntryID),
 	}
 	s.cron.Start()
 	return s
@@ -47,7 +47,8 @@ func (s *SchedulerService) AddSchedule(schedule *models.BackupSchedule) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if existingID, exists := s.jobs[schedule.ID]; exists {
+	scheduleID := schedule.ID
+	if existingID, exists := s.jobs[scheduleID]; exists {
 		s.cron.Remove(existingID)
 	}
 
@@ -58,11 +59,11 @@ func (s *SchedulerService) AddSchedule(schedule *models.BackupSchedule) error {
 		return err
 	}
 
-	s.jobs[schedule.ID] = entryID
+	s.jobs[scheduleID] = entryID
 	return nil
 }
 
-func (s *SchedulerService) RemoveSchedule(scheduleID uint) {
+func (s *SchedulerService) RemoveSchedule(scheduleID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -77,13 +78,13 @@ func (s *SchedulerService) runScheduledBackup(schedule *models.BackupSchedule) {
 
 	backup, err := s.backupService.Create(schedule.ServerID, name, "Automatic scheduled backup", models.BackupTypeScheduled)
 	if err != nil {
-		log.Printf("Scheduled backup failed for server %d: %v", schedule.ServerID, err)
+		logger.Error().Err(err).Str("server_id", schedule.ServerID).Msg("Scheduled backup failed")
 		return
 	}
 
 	s.cleanupOldBackups(schedule)
 
-	log.Printf("Scheduled backup %d created for server %d", backup.ID, schedule.ServerID)
+	logger.Info().Str("backup_id", backup.ID).Str("server_id", schedule.ServerID).Msg("Scheduled backup created")
 }
 
 func (s *SchedulerService) cleanupOldBackups(schedule *models.BackupSchedule) {
@@ -108,7 +109,7 @@ func (s *SchedulerService) cleanupOldBackups(schedule *models.BackupSchedule) {
 	}
 }
 
-func (s *SchedulerService) CreateSchedule(serverID uint, name, cronExpr string, keepCount, keepDays int) (*models.BackupSchedule, error) {
+func (s *SchedulerService) CreateSchedule(serverID string, name, cronExpr string, keepCount, keepDays int) (*models.BackupSchedule, error) {
 	if _, err := cron.ParseStandard(cronExpr); err != nil {
 		return nil, err
 	}
@@ -131,19 +132,19 @@ func (s *SchedulerService) CreateSchedule(serverID uint, name, cronExpr string, 
 	return schedule, nil
 }
 
-func (s *SchedulerService) DeleteSchedule(id uint) error {
+func (s *SchedulerService) DeleteSchedule(id string) error {
 	s.RemoveSchedule(id)
-	return s.db.Delete(&models.BackupSchedule{}, id).Error
+	return s.db.Delete(&models.BackupSchedule{}, "id = ?", id).Error
 }
 
-func (s *SchedulerService) ToggleSchedule(id uint, enabled bool) error {
+func (s *SchedulerService) ToggleSchedule(id string, enabled bool) error {
 	if err := s.db.Model(&models.BackupSchedule{}).Where("id = ?", id).Update("enabled", enabled).Error; err != nil {
 		return err
 	}
 
 	if enabled {
 		var schedule models.BackupSchedule
-		if err := s.db.First(&schedule, id).Error; err != nil {
+		if err := s.db.First(&schedule, "id = ?", id).Error; err != nil {
 			return err
 		}
 		return s.AddSchedule(&schedule)
@@ -153,7 +154,7 @@ func (s *SchedulerService) ToggleSchedule(id uint, enabled bool) error {
 	return nil
 }
 
-func (s *SchedulerService) ListForServer(serverID uint) ([]models.BackupSchedule, error) {
+func (s *SchedulerService) ListForServer(serverID string) ([]models.BackupSchedule, error) {
 	var schedules []models.BackupSchedule
 	if err := s.db.Where("server_id = ?", serverID).Find(&schedules).Error; err != nil {
 		return nil, err

@@ -55,5 +55,5 @@ type ToggleSchedule struct {
 }
 
 type AssignServer struct {
-	ServerID uint `form:"server_id"`
+	ServerID string `form:"server_id"`
 }

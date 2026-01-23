@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"strconv"
-
 	"gs-panel/internal/forms"
 	"gs-panel/internal/middleware"
 	"gs-panel/internal/services"
@@ -74,18 +72,18 @@ func (h *ServerHandler) Create(c fiber.Ctx) error {
 }
 
 func (h *ServerHandler) View(c fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	id := c.Params("id")
+	if id == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
-	server, err := h.serverService.Get(uint(id))
+	server, err := h.serverService.Get(id)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
 
 	_ = h.serverService.SyncStatus(server.ID)
-	server, _ = h.serverService.Get(uint(id))
+	server, _ = h.serverService.Get(id)
 
 	return c.Render("servers/view", fiber.Map{
 		"Title":  server.Name,
@@ -95,59 +93,59 @@ func (h *ServerHandler) View(c fiber.Ctx) error {
 }
 
 func (h *ServerHandler) Delete(c fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	id := c.Params("id")
+	if id == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
-	if err := h.serverService.Delete(uint(id)); err != nil {
+	if err := h.serverService.Delete(id); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to delete server: "+err.Error())
 	}
 	return c.Redirect().To("/")
 }
 
 func (h *ServerHandler) Start(c fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	id := c.Params("id")
+	if id == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
-	if err := h.serverService.Start(uint(id)); err != nil {
+	if err := h.serverService.Start(id); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to start server: "+err.Error())
 	}
-	server, _ := h.serverService.Get(uint(id))
+	server, _ := h.serverService.Get(id)
 	return c.Render("partials/server_status", fiber.Map{"Server": server})
 }
 
 func (h *ServerHandler) Stop(c fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	id := c.Params("id")
+	if id == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
-	if err := h.serverService.Stop(uint(id)); err != nil {
+	if err := h.serverService.Stop(id); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to stop server: "+err.Error())
 	}
-	server, _ := h.serverService.Get(uint(id))
+	server, _ := h.serverService.Get(id)
 	return c.Render("partials/server_status", fiber.Map{"Server": server})
 }
 
 func (h *ServerHandler) Restart(c fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	id := c.Params("id")
+	if id == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
-	if err := h.serverService.Restart(uint(id)); err != nil {
+	if err := h.serverService.Restart(id); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to restart server: "+err.Error())
 	}
-	server, _ := h.serverService.Get(uint(id))
+	server, _ := h.serverService.Get(id)
 	return c.Render("partials/server_status", fiber.Map{"Server": server})
 }
 
 func (h *ServerHandler) Status(c fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil {
+	id := c.Params("id")
+	if id == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
-	_ = h.serverService.SyncStatus(uint(id))
-	server, err := h.serverService.Get(uint(id))
+	_ = h.serverService.SyncStatus(id)
+	server, err := h.serverService.Get(id)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}

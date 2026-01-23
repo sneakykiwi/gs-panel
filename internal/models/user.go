@@ -3,12 +3,13 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 type User struct {
-	ID           uint           `gorm:"primarykey" json:"id"`
+	ID           string         `gorm:"primarykey;size:36" json:"id"`
 	Email        string         `gorm:"uniqueIndex;not null" json:"email"`
 	PasswordHash string         `gorm:"not null" json:"-"`
 	TOTPSecret   string         `json:"-"`
@@ -17,6 +18,13 @@ type User struct {
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 	Servers      []Server       `gorm:"many2many:server_users;" json:"-"`
+}
+
+func (u *User) BeforeCreate(tx *gorm.DB) error {
+	if u.ID == "" {
+		u.ID = uuid.Must(uuid.NewV7()).String()
+	}
+	return nil
 }
 
 func (u *User) SetPassword(password string) error {

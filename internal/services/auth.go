@@ -96,9 +96,9 @@ func (s *AuthService) CreateUser(email, password string, isAdmin bool) (*models.
 	return user, nil
 }
 
-func (s *AuthService) GetUserByID(id uint) (*models.User, error) {
+func (s *AuthService) GetUserByID(id string) (*models.User, error) {
 	var user models.User
-	if err := s.db.First(&user, id).Error; err != nil {
+	if err := s.db.First(&user, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -112,8 +112,8 @@ func (s *AuthService) ListUsers() ([]models.User, error) {
 	return users, nil
 }
 
-func (s *AuthService) DeleteUser(id uint) error {
-	return s.db.Delete(&models.User{}, id).Error
+func (s *AuthService) DeleteUser(id string) error {
+	return s.db.Delete(&models.User{}, "id = ?", id).Error
 }
 
 func (s *AuthService) HasAdminUser() bool {

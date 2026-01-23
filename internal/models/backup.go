@@ -3,6 +3,7 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -16,9 +17,8 @@ const (
 )
 
 type Backup struct {
-	ID          uint           `gorm:"primarykey" json:"id"`
-	ServerID    uint           `gorm:"index;not null" json:"server_id"`
-	UUID        string         `gorm:"uniqueIndex;not null" json:"uuid"`
+	ID          string         `gorm:"primarykey;size:36" json:"id"`
+	ServerID    string         `gorm:"index;not null;size:36" json:"server_id"`
 	Name        string         `gorm:"not null" json:"name"`
 	Description string         `json:"description"`
 	Filename    string         `gorm:"not null" json:"filename"`
@@ -30,9 +30,16 @@ type Backup struct {
 	Server      Server         `gorm:"foreignKey:ServerID" json:"-"`
 }
 
+func (b *Backup) BeforeCreate(tx *gorm.DB) error {
+	if b.ID == "" {
+		b.ID = uuid.Must(uuid.NewV7()).String()
+	}
+	return nil
+}
+
 type BackupSchedule struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
-	ServerID  uint           `gorm:"index;not null" json:"server_id"`
+	ID        string         `gorm:"primarykey;size:36" json:"id"`
+	ServerID  string         `gorm:"index;not null;size:36" json:"server_id"`
 	Name      string         `gorm:"not null" json:"name"`
 	Enabled   bool           `gorm:"default:true" json:"enabled"`
 	CronExpr  string         `gorm:"not null" json:"cron_expr"`
@@ -42,4 +49,11 @@ type BackupSchedule struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 	Server    Server         `gorm:"foreignKey:ServerID" json:"-"`
+}
+
+func (bs *BackupSchedule) BeforeCreate(tx *gorm.DB) error {
+	if bs.ID == "" {
+		bs.ID = uuid.Must(uuid.NewV7()).String()
+	}
+	return nil
 }

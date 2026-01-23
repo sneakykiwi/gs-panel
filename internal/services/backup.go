@@ -15,7 +15,6 @@ import (
 	"gs-panel/internal/config"
 	"gs-panel/internal/models"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -25,8 +24,8 @@ var (
 )
 
 type BackupProgress struct {
-	ServerID   uint
-	BackupID   uint
+	ServerID   string
+	BackupID   string
 	TotalFiles int
 	Done       int
 	Percentage float64
@@ -36,7 +35,7 @@ type BackupProgress struct {
 type BackupService struct {
 	db       *gorm.DB
 	cfg      *config.Config
-	progress map[uint]*BackupProgress
+	progress map[string]*BackupProgress
 }
 
 func NewBackupService(db *gorm.DB, cfg *config.Config) *BackupService {
@@ -46,27 +45,25 @@ func NewBackupService(db *gorm.DB, cfg *config.Config) *BackupService {
 	return &BackupService{
 		db:       db,
 		cfg:      cfg,
-		progress: make(map[uint]*BackupProgress),
+		progress: make(map[string]*BackupProgress),
 	}
 }
 
-func (s *BackupService) Create(serverID uint, name, description string, backupType models.BackupType) (*models.Backup, error) {
+func (s *BackupService) Create(serverID string, name, description string, backupType models.BackupType) (*models.Backup, error) {
 	if _, exists := s.progress[serverID]; exists {
 		return nil, ErrBackupInProgress
 	}
 
 	var server models.Server
-	if err := s.db.First(&server, serverID).Error; err != nil {
+	if err := s.db.First(&server, "id = ?", serverID).Error; err != nil {
 		return nil, err
 	}
 
-	backupUUID := uuid.New().String()
-	filename := fmt.Sprintf("%s_%s.tar.gz", server.UUID, time.Now().Format("20060102_150405"))
+	filename := fmt.Sprintf("%s_%s.tar.gz", serverID, time.Now().Format("20060102_150405"))
 	backupPath := filepath.Join(s.cfg.Storage.Backups, filename)
 
 	backup := &models.Backup{
 		ServerID:    serverID,
-		UUID:        backupUUID,
 		Name:        name,
 		Description: description,
 		Filename:    filename,
@@ -89,9 +86,10 @@ func (s *BackupService) Create(serverID uint, name, description string, backupTy
 }
 
 func (s *BackupService) runBackup(backup *models.Backup, server *models.Server, backupPath string) {
-	defer delete(s.progress, server.ID)
+	serverID := server.ID
+	defer delete(s.progress, serverID)
 
-	serverPath := filepath.Join(s.cfg.Storage.Servers, server.UUID)
+	serverPath := filepath.Join(s.cfg.Storage.Servers, serverID)
 
 	var totalFiles int
 	filepath.Walk(serverPath, func(_ string, info os.FileInfo, _ error) error {
@@ -101,12 +99,12 @@ func (s *BackupService) runBackup(backup *models.Backup, server *models.Server, 
 		return nil
 	})
 
-	s.progress[server.ID].TotalFiles = totalFiles
-	s.progress[server.ID].Status = "compressing"
+	s.progress[serverID].TotalFiles = totalFiles
+	s.progress[serverID].Status = "compressing"
 
 	file, err := os.Create(backupPath)
 	if err != nil {
-		s.progress[server.ID].Status = "failed"
+		s.progress[serverID].Status = "failed"
 		return
 	}
 	defer file.Close()
@@ -147,14 +145,14 @@ func (s *BackupService) runBackup(backup *models.Backup, server *models.Server, 
 		}
 
 		processed++
-		s.progress[server.ID].Done = processed
-		s.progress[server.ID].Percentage = float64(processed) / float64(totalFiles) * 100
+		s.progress[serverID].Done = processed
+		s.progress[serverID].Percentage = float64(processed) / float64(totalFiles) * 100
 
 		return nil
 	})
 
 	if err != nil {
-		s.progress[server.ID].Status = "failed"
+		s.progress[serverID].Status = "failed"
 		os.Remove(backupPath)
 		return
 	}
@@ -168,26 +166,18 @@ func (s *BackupService) runBackup(backup *models.Backup, server *models.Server, 
 	backup.Checksum = hex.EncodeToString(hash.Sum(nil))
 
 	s.db.Save(backup)
-	s.progress[server.ID].Status = "completed"
+	s.progress[serverID].Status = "completed"
 }
 
-func (s *BackupService) Get(id uint) (*models.Backup, error) {
+func (s *BackupService) Get(id string) (*models.Backup, error) {
 	var backup models.Backup
-	if err := s.db.First(&backup, id).Error; err != nil {
+	if err := s.db.First(&backup, "id = ?", id).Error; err != nil {
 		return nil, ErrBackupNotFound
 	}
 	return &backup, nil
 }
 
-func (s *BackupService) GetByUUID(uuid string) (*models.Backup, error) {
-	var backup models.Backup
-	if err := s.db.Where("uuid = ?", uuid).First(&backup).Error; err != nil {
-		return nil, ErrBackupNotFound
-	}
-	return &backup, nil
-}
-
-func (s *BackupService) ListForServer(serverID uint) ([]models.Backup, error) {
+func (s *BackupService) ListForServer(serverID string) ([]models.Backup, error) {
 	var backups []models.Backup
 	if err := s.db.Where("server_id = ?", serverID).Order("created_at DESC").Find(&backups).Error; err != nil {
 		return nil, err
@@ -195,7 +185,7 @@ func (s *BackupService) ListForServer(serverID uint) ([]models.Backup, error) {
 	return backups, nil
 }
 
-func (s *BackupService) Delete(id uint) error {
+func (s *BackupService) Delete(id string) error {
 	backup, err := s.Get(id)
 	if err != nil {
 		return err
@@ -207,19 +197,19 @@ func (s *BackupService) Delete(id uint) error {
 	return s.db.Delete(backup).Error
 }
 
-func (s *BackupService) Restore(backupID uint) error {
+func (s *BackupService) Restore(backupID string) error {
 	backup, err := s.Get(backupID)
 	if err != nil {
 		return err
 	}
 
 	var server models.Server
-	if err := s.db.First(&server, backup.ServerID).Error; err != nil {
+	if err := s.db.First(&server, "id = ?", backup.ServerID).Error; err != nil {
 		return err
 	}
 
 	backupPath := filepath.Join(s.cfg.Storage.Backups, backup.Filename)
-	serverPath := filepath.Join(s.cfg.Storage.Servers, server.UUID)
+	serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
 
 	file, err := os.Open(backupPath)
 	if err != nil {
@@ -265,11 +255,11 @@ func (s *BackupService) Restore(backupID uint) error {
 	return nil
 }
 
-func (s *BackupService) GetProgress(serverID uint) *BackupProgress {
+func (s *BackupService) GetProgress(serverID string) *BackupProgress {
 	return s.progress[serverID]
 }
 
-func (s *BackupService) VerifyChecksum(id uint) (bool, error) {
+func (s *BackupService) VerifyChecksum(id string) (bool, error) {
 	backup, err := s.Get(id)
 	if err != nil {
 		return false, err
