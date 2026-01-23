@@ -26,6 +26,7 @@ type DatabaseConfig struct {
 type StorageConfig struct {
 	Servers string
 	Backups string
+	Logs    string
 }
 
 type DockerConfig struct {
@@ -60,6 +61,7 @@ func Load() *Config {
 		Storage: StorageConfig{
 			Servers: getEnv("GS_PANEL_SERVERS_DIR", filepath.Join(baseDir, "servers")),
 			Backups: getEnv("GS_PANEL_BACKUPS_DIR", filepath.Join(baseDir, "backups")),
+			Logs:    getEnv("GS_PANEL_LOGS_DIR", filepath.Join(baseDir, "logs")),
 		},
 		Docker: DockerConfig{
 			Socket:  getEnv("GS_PANEL_DOCKER_SOCKET", defaultSocket),

@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
 	"gs-panel/internal/config"
 	"gs-panel/internal/database"
 	"gs-panel/internal/handlers"
+	"gs-panel/internal/logger"
 	"gs-panel/internal/middleware"
 	"gs-panel/internal/services"
 
@@ -21,16 +21,27 @@ import (
 func main() {
 	cfg := config.Load()
 
+	if err := logger.Init(cfg.Storage.Logs); err != nil {
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+
+	printBanner()
+
+	logger.Info().Str("version", "1.0.0").Msg("Starting GS Panel")
+
 	db, err := database.New(cfg)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		logger.Fatal().Err(err).Msg("Failed to connect to database")
 	}
+	logger.Info().Str("path", cfg.Database.Path).Msg("Database connected")
 
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		log.Fatalf("Failed to connect to Docker: %v", err)
+		logger.Fatal().Err(err).Msg("Failed to connect to Docker")
 	}
 	defer dockerClient.Close()
+	logger.Info().Msg("Docker client connected")
 
 	templateService := services.NewTemplateService()
 	authService := services.NewAuthService(db)
@@ -66,6 +77,7 @@ func main() {
 		ViewsLayout: "layouts/base",
 	})
 
+	app.Use(middleware.Logger())
 	app.Use("/static", static.New(staticPath))
 
 	authHandler := handlers.NewAuthHandler(authService)
@@ -117,8 +129,10 @@ func main() {
 	admin.Delete("/admin/users/:id/servers/:serverId", adminHandler.UnassignServer)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("Starting GS Panel on %s", addr)
-	log.Fatal(app.Listen(addr))
+	logger.Info().Str("address", addr).Msg("Listening on")
+	if err := app.Listen(addr); err != nil {
+		logger.Fatal().Err(err).Msg("Server failed")
+	}
 }
 
 func findRootDir() string {
@@ -142,4 +156,21 @@ func findRootDir() string {
 	}
 
 	return "."
+}
+
+func printBanner() {
+	banner := `
+  ╔═══════════════════════════════════════════════════════════╗
+  ║                                                           ║
+  ║    ██████╗ ███████╗    ██████╗  █████╗ ███╗   ██╗███████╗ ║
+  ║   ██╔════╝ ██╔════╝    ██╔══██╗██╔══██╗████╗  ██║██╔════╝ ║
+  ║   ██║  ███╗███████╗    ██████╔╝███████║██╔██╗ ██║█████╗   ║
+  ║   ██║   ██║╚════██║    ██╔═══╝ ██╔══██║██║╚██╗██║██╔══╝   ║
+  ║   ╚██████╔╝███████║    ██║     ██║  ██║██║ ╚████║███████╗ ║
+  ║    ╚═════╝ ╚══════╝    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝ ║
+  ║                                                           ║
+  ║           Game Server Management Panel v1.0.0             ║
+  ╚═══════════════════════════════════════════════════════════╝
+`
+	fmt.Print(banner)
 }
