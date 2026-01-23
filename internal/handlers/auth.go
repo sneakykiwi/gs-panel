@@ -79,7 +79,7 @@ func (h *AuthHandler) Setup(c fiber.Ctx) error {
 	}
 
 	if _, err := h.authService.CreateUser(form.Email, form.Password, true); err != nil {
-		return c.Render("setup", fiber.Map{"Title": "Initial Setup", "Error": "Failed to create admin user"})
+		return c.Render("setup", fiber.Map{"Title": "Initial Setup", "Error": "Failed to create admin user: " + err.Error()})
 	}
 
 	return c.Redirect().To("/login")

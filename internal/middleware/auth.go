@@ -14,6 +14,10 @@ const (
 
 func Auth(authService *services.AuthService) fiber.Handler {
 	return func(c fiber.Ctx) error {
+		if !authService.HasAdminUser() {
+			return c.Redirect().To("/setup")
+		}
+
 		token := c.Cookies(SessionCookieName)
 		if token == "" {
 			return c.Redirect().To("/login")

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 )
 
@@ -33,7 +34,20 @@ type DockerConfig struct {
 }
 
 func Load() *Config {
-	baseDir := getEnv("GS_PANEL_DATA_DIR", "/var/lib/gs-panel")
+	var defaultBaseDir string
+	if runtime.GOOS == "windows" {
+		defaultBaseDir = filepath.Join(".", "data")
+	} else {
+		defaultBaseDir = "/var/lib/gs-panel"
+	}
+	baseDir := getEnv("GS_PANEL_DATA_DIR", defaultBaseDir)
+
+	var defaultSocket string
+	if runtime.GOOS == "windows" {
+		defaultSocket = "npipe:////./pipe/docker_engine"
+	} else {
+		defaultSocket = "/var/run/docker.sock"
+	}
 
 	return &Config{
 		Server: ServerConfig{
@@ -48,7 +62,7 @@ func Load() *Config {
 			Backups: getEnv("GS_PANEL_BACKUPS_DIR", filepath.Join(baseDir, "backups")),
 		},
 		Docker: DockerConfig{
-			Socket:  getEnv("GS_PANEL_DOCKER_SOCKET", "/var/run/docker.sock"),
+			Socket:  getEnv("GS_PANEL_DOCKER_SOCKET", defaultSocket),
 			Network: getEnv("GS_PANEL_DOCKER_NETWORK", "gs-panel"),
 		},
 	}
