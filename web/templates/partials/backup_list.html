@@ -1,0 +1,7 @@
+{{range .Backups}}
+{{template "backup_item" .}}
+{{else}}
+<div class="text-gray-400 text-center py-8">
+    <p>No backups yet</p>
+</div>
+{{end}}

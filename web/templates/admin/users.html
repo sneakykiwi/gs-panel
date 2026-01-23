@@ -1,0 +1,52 @@
+{{define "content"}}
+<div class="flex h-screen">
+    {{template "sidebar" .}}
+
+    <main class="flex-1 p-8 overflow-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold">User Management</h1>
+            <a href="/admin/users/new" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition">
+                + New User
+            </a>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg border border-gray-700">
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-gray-700">
+                        <th class="text-left p-4 font-medium text-gray-400">Email</th>
+                        <th class="text-left p-4 font-medium text-gray-400">Role</th>
+                        <th class="text-left p-4 font-medium text-gray-400">Created</th>
+                        <th class="text-right p-4 font-medium text-gray-400">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Users}}
+                    <tr class="border-b border-gray-700 last:border-0" id="user-{{.ID}}">
+                        <td class="p-4">{{.Email}}</td>
+                        <td class="p-4">
+                            {{if .IsAdmin}}
+                            <span class="px-2 py-1 bg-purple-500/20 text-purple-400 rounded text-xs">Admin</span>
+                            {{else}}
+                            <span class="px-2 py-1 bg-gray-500/20 text-gray-400 rounded text-xs">User</span>
+                            {{end}}
+                        </td>
+                        <td class="p-4 text-gray-400">{{.CreatedAt.Format "Jan 02, 2006"}}</td>
+                        <td class="p-4 text-right">
+                            <a href="/admin/users/{{.ID}}/servers" class="text-blue-400 hover:text-blue-300 mr-4">Servers</a>
+                            {{if not .IsAdmin}}
+                            <button hx-delete="/admin/users/{{.ID}}"
+                                    hx-confirm="Delete this user?"
+                                    hx-target="#user-{{.ID}}"
+                                    hx-swap="outerHTML"
+                                    class="text-red-400 hover:text-red-300">Delete</button>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </main>
+</div>
+{{end}}

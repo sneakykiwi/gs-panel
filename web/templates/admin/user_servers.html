@@ -1,0 +1,58 @@
+{{define "content"}}
+<div class="flex h-screen">
+    {{template "sidebar" .}}
+
+    <main class="flex-1 p-8 overflow-auto">
+        <div class="mb-6">
+            <a href="/admin/users" class="text-gray-400 hover:text-white text-sm">&larr; Back to Users</a>
+        </div>
+
+        <h1 class="text-3xl font-bold mb-2">Server Access</h1>
+        <p class="text-gray-400 mb-8">Managing access for: {{.TargetUser.Email}}</p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h2 class="text-xl font-bold mb-4">Assigned Servers</h2>
+                {{$userServerIDs := .UserServerIDs}}
+                {{$targetUserID := .TargetUser.ID}}
+                <ul class="space-y-2">
+                    {{range .AllServers}}
+                    {{if index $userServerIDs .ID}}
+                    <li class="flex justify-between items-center p-3 bg-gray-700 rounded">
+                        <span>{{.Name}}</span>
+                        <button hx-delete="/admin/users/{{$targetUserID}}/servers/{{.ID}}"
+                                hx-swap="none"
+                                hx-on::after-request="location.reload()"
+                                class="text-red-400 hover:text-red-300 text-sm">Remove</button>
+                    </li>
+                    {{end}}
+                    {{else}}
+                    <li class="text-gray-400 text-center py-4">No servers assigned</li>
+                    {{end}}
+                </ul>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h2 class="text-xl font-bold mb-4">Add Server Access</h2>
+                <form method="POST" action="/admin/users/{{.TargetUser.ID}}/servers">
+                    <div class="mb-4">
+                        <select name="server_id" required
+                            class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500">
+                            <option value="">Select a server...</option>
+                            {{range .AllServers}}
+                            {{if not (index $userServerIDs .ID)}}
+                            <option value="{{.ID}}">{{.Name}}</option>
+                            {{end}}
+                            {{end}}
+                        </select>
+                    </div>
+                    <button type="submit"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded transition">
+                        Grant Access
+                    </button>
+                </form>
+            </div>
+        </div>
+    </main>
+</div>
+{{end}}

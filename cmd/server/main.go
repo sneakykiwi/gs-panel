@@ -35,6 +35,12 @@ func main() {
 	templateService := services.NewTemplateService()
 	authService := services.NewAuthService(db)
 	serverService := services.NewServerService(db, dockerClient, cfg, templateService)
+	backupService := services.NewBackupService(db, cfg)
+	consoleService := services.NewConsoleService(dockerClient)
+	statsService := services.NewStatsService(dockerClient)
+
+	_ = consoleService
+	_ = statsService
 
 	serverService.SyncAllStatuses()
 
@@ -46,6 +52,9 @@ func main() {
 	engine.AddFunc("eq", func(a, b interface{}) bool {
 		return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 	})
+	engine.AddFunc("divf", func(a, b int64) float64 {
+		return float64(a) / float64(b)
+	})
 
 	app := fiber.New(fiber.Config{
 		Views:       engine,
@@ -56,6 +65,8 @@ func main() {
 
 	authHandler := handlers.NewAuthHandler(authService)
 	serverHandler := handlers.NewServerHandler(serverService, templateService)
+	backupHandler := handlers.NewBackupHandler(backupService, serverService)
+	adminHandler := handlers.NewAdminHandler(authService, serverService)
 
 	app.Get("/login", authHandler.LoginPage)
 	app.Post("/login", authHandler.Login)
@@ -72,9 +83,22 @@ func main() {
 	protected.Post("/servers/:id/stop", serverHandler.Stop)
 	protected.Post("/servers/:id/restart", serverHandler.Restart)
 	protected.Get("/servers/:id/status", serverHandler.Status)
+	protected.Get("/servers/:id/backups", backupHandler.List)
+	protected.Post("/servers/:id/backups", backupHandler.Create)
+	protected.Get("/servers/:id/backups/progress", backupHandler.Progress)
+	protected.Delete("/backups/:backupId", backupHandler.Delete)
+	protected.Post("/backups/:backupId/restore", backupHandler.Restore)
+	protected.Get("/backups/:backupId/verify", backupHandler.Verify)
 
 	admin := protected.Group("", middleware.AdminOnly())
 	admin.Delete("/servers/:id", serverHandler.Delete)
+	admin.Get("/admin/users", adminHandler.UsersPage)
+	admin.Get("/admin/users/new", adminHandler.CreateUserPage)
+	admin.Post("/admin/users", adminHandler.CreateUser)
+	admin.Delete("/admin/users/:id", adminHandler.DeleteUser)
+	admin.Get("/admin/users/:id/servers", adminHandler.UserServersPage)
+	admin.Post("/admin/users/:id/servers", adminHandler.AssignServer)
+	admin.Delete("/admin/users/:id/servers/:serverId", adminHandler.UnassignServer)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("Starting GS Panel on %s", addr)
