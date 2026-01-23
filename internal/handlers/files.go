@@ -44,7 +44,7 @@ func (h *FilesHandler) getServerPath(serverID uint) (string, error) {
 func (h *FilesHandler) validatePath(serverPath, relativePath string) (string, error) {
 	fullPath := filepath.Join(serverPath, relativePath)
 	if !strings.HasPrefix(fullPath, serverPath) {
-		return "", fiber.ErrForbidden
+		return "", fiber.NewError(fiber.StatusForbidden, "Access denied: path outside server directory")
 	}
 	return fullPath, nil
 }
@@ -52,12 +52,12 @@ func (h *FilesHandler) validatePath(serverPath, relativePath string) (string, er
 func (h *FilesHandler) List(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	server, err := h.serverService.Get(uint(serverID))
 	if err != nil {
-		return fiber.ErrNotFound
+		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
 
 	relativePath := filepath.Clean(c.Query("path", "/"))
@@ -73,7 +73,7 @@ func (h *FilesHandler) List(c fiber.Ctx) error {
 
 	entries, err := os.ReadDir(fullPath)
 	if err != nil {
-		return fiber.ErrNotFound
+		return fiber.NewError(fiber.StatusNotFound, "Directory not found")
 	}
 
 	var files []FileInfo
@@ -116,17 +116,17 @@ func (h *FilesHandler) List(c fiber.Ctx) error {
 func (h *FilesHandler) View(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	server, err := h.serverService.Get(uint(serverID))
 	if err != nil {
-		return fiber.ErrNotFound
+		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
 
 	relativePath := c.Query("path", "")
 	if relativePath == "" {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Path is required")
 	}
 
 	serverPath := filepath.Join(h.cfg.Storage.Servers, server.UUID)
@@ -137,11 +137,11 @@ func (h *FilesHandler) View(c fiber.Ctx) error {
 
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		return fiber.ErrNotFound
+		return fiber.NewError(fiber.StatusNotFound, "File not found")
 	}
 
 	if len(content) > 1024*1024 {
-		return c.Status(fiber.StatusRequestEntityTooLarge).SendString("File too large to view")
+		return fiber.NewError(fiber.StatusRequestEntityTooLarge, "File too large to view (max 1MB)")
 	}
 
 	return c.Render("servers/file_view", fiber.Map{
@@ -157,17 +157,17 @@ func (h *FilesHandler) View(c fiber.Ctx) error {
 func (h *FilesHandler) Save(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	serverPath, err := h.getServerPath(uint(serverID))
 	if err != nil {
-		return fiber.ErrNotFound
+		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
 
 	var form forms.SaveFile
 	if err := c.Bind().Form(&form); err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid form data")
 	}
 
 	fullPath, err := h.validatePath(serverPath, form.Path)
@@ -176,7 +176,7 @@ func (h *FilesHandler) Save(c fiber.Ctx) error {
 	}
 
 	if err := os.WriteFile(fullPath, []byte(form.Content), 0644); err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to save file: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
 }
@@ -184,12 +184,12 @@ func (h *FilesHandler) Save(c fiber.Ctx) error {
 func (h *FilesHandler) Upload(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	serverPath, err := h.getServerPath(uint(serverID))
 	if err != nil {
-		return fiber.ErrNotFound
+		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
 
 	var form forms.Upload
@@ -205,27 +205,27 @@ func (h *FilesHandler) Upload(c fiber.Ctx) error {
 
 	file, err := c.FormFile("file")
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "No file provided")
 	}
 
 	if file.Size > config.MaxUploadSize {
-		return c.Status(fiber.StatusRequestEntityTooLarge).SendString("File too large")
+		return fiber.NewError(fiber.StatusRequestEntityTooLarge, "File too large (max 100MB)")
 	}
 
 	src, err := file.Open()
 	if err != nil {
-		return err
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to open uploaded file")
 	}
 	defer src.Close()
 
 	dst, err := os.Create(filepath.Join(targetDir, file.Filename))
 	if err != nil {
-		return err
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create file: "+err.Error())
 	}
 	defer dst.Close()
 
 	if _, err := io.Copy(dst, src); err != nil {
-		return err
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to write file: "+err.Error())
 	}
 
 	return c.Redirect().To("/servers/" + c.Params("id") + "/files?path=" + form.Path)
@@ -234,17 +234,17 @@ func (h *FilesHandler) Upload(c fiber.Ctx) error {
 func (h *FilesHandler) Delete(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	serverPath, err := h.getServerPath(uint(serverID))
 	if err != nil {
-		return fiber.ErrNotFound
+		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
 
 	relativePath := c.Query("path", "")
 	if relativePath == "" || relativePath == "/" {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Cannot delete root directory")
 	}
 
 	fullPath, err := h.validatePath(serverPath, relativePath)
@@ -253,7 +253,7 @@ func (h *FilesHandler) Delete(c fiber.Ctx) error {
 	}
 
 	if err := os.RemoveAll(fullPath); err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to delete: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
 }
@@ -261,24 +261,24 @@ func (h *FilesHandler) Delete(c fiber.Ctx) error {
 func (h *FilesHandler) CreateDir(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	serverPath, err := h.getServerPath(uint(serverID))
 	if err != nil {
-		return fiber.ErrNotFound
+		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
 
 	var form forms.CreateDir
 	if err := c.Bind().Form(&form); err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid form data")
 	}
 
 	if form.Path == "" {
 		form.Path = "/"
 	}
 	if form.Name == "" {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Folder name is required")
 	}
 
 	fullPath, err := h.validatePath(serverPath, filepath.Join(form.Path, form.Name))
@@ -287,7 +287,7 @@ func (h *FilesHandler) CreateDir(c fiber.Ctx) error {
 	}
 
 	if err := os.MkdirAll(fullPath, 0755); err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create folder: "+err.Error())
 	}
 	return c.Redirect().To("/servers/" + c.Params("id") + "/files?path=" + form.Path)
 }

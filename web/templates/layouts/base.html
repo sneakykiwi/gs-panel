@@ -13,6 +13,15 @@
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
+    <div id="error-toast" class="fixed top-4 right-4 z-50 max-w-md"></div>
     {{embed}}
+    <script>
+        document.body.addEventListener('htmx:responseError', function(evt) {
+            const toast = document.getElementById('error-toast');
+            toast.innerHTML = '<div class="bg-red-500/20 border border-red-500 text-red-300 px-4 py-3 rounded" role="alert">' +
+                (evt.detail.xhr.responseText || 'An error occurred') + '</div>';
+            setTimeout(() => { toast.innerHTML = ''; }, 5000);
+        });
+    </script>
 </body>
 </html>

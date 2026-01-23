@@ -24,12 +24,12 @@ func NewBackupHandler(backupService *services.BackupService, serverService *serv
 func (h *BackupHandler) List(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	backups, err := h.backupService.ListForServer(uint(serverID))
 	if err != nil {
-		return err
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to list backups: "+err.Error())
 	}
 
 	return c.Render("partials/backup_list", fiber.Map{"Backups": backups, "ServerID": serverID})
@@ -38,7 +38,7 @@ func (h *BackupHandler) List(c fiber.Ctx) error {
 func (h *BackupHandler) Create(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	var form forms.CreateBackup
@@ -49,7 +49,7 @@ func (h *BackupHandler) Create(c fiber.Ctx) error {
 
 	backup, err := h.backupService.Create(uint(serverID), form.Name, form.Description, models.BackupTypeManual)
 	if err != nil {
-		return c.Status(fiber.StatusConflict).SendString(err.Error())
+		return fiber.NewError(fiber.StatusConflict, "Failed to create backup: "+err.Error())
 	}
 
 	return c.Render("partials/backup_item", fiber.Map{"Backup": backup})
@@ -58,10 +58,10 @@ func (h *BackupHandler) Create(c fiber.Ctx) error {
 func (h *BackupHandler) Delete(c fiber.Ctx) error {
 	backupID, err := strconv.ParseUint(c.Params("backupId"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid backup ID")
 	}
 	if err := h.backupService.Delete(uint(backupID)); err != nil {
-		return err
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to delete backup: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
 }
@@ -69,10 +69,10 @@ func (h *BackupHandler) Delete(c fiber.Ctx) error {
 func (h *BackupHandler) Restore(c fiber.Ctx) error {
 	backupID, err := strconv.ParseUint(c.Params("backupId"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid backup ID")
 	}
 	if err := h.backupService.Restore(uint(backupID)); err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to restore backup: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
 }
@@ -80,7 +80,7 @@ func (h *BackupHandler) Restore(c fiber.Ctx) error {
 func (h *BackupHandler) Progress(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	progress := h.backupService.GetProgress(uint(serverID))
@@ -93,12 +93,12 @@ func (h *BackupHandler) Progress(c fiber.Ctx) error {
 func (h *BackupHandler) Verify(c fiber.Ctx) error {
 	backupID, err := strconv.ParseUint(c.Params("backupId"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid backup ID")
 	}
 
 	valid, err := h.backupService.VerifyChecksum(uint(backupID))
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to verify backup: "+err.Error())
 	}
 	return c.JSON(fiber.Map{"valid": valid})
 }
@@ -106,12 +106,12 @@ func (h *BackupHandler) Verify(c fiber.Ctx) error {
 func (h *BackupHandler) ListSchedules(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	schedules, err := h.schedulerService.ListForServer(uint(serverID))
 	if err != nil {
-		return err
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to list schedules: "+err.Error())
 	}
 
 	server, _ := h.serverService.Get(uint(serverID))
@@ -126,16 +126,16 @@ func (h *BackupHandler) ListSchedules(c fiber.Ctx) error {
 func (h *BackupHandler) CreateSchedule(c fiber.Ctx) error {
 	serverID, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
 	}
 
 	var form forms.CreateSchedule
 	if err := c.Bind().Form(&form); err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid form data")
 	}
 
 	if _, err = h.schedulerService.CreateSchedule(uint(serverID), form.Name, form.CronExpr, form.KeepCount, form.KeepDays); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
+		return fiber.NewError(fiber.StatusBadRequest, "Failed to create schedule: "+err.Error())
 	}
 
 	return c.Redirect().To("/servers/" + c.Params("id") + "/schedules")
@@ -144,10 +144,10 @@ func (h *BackupHandler) CreateSchedule(c fiber.Ctx) error {
 func (h *BackupHandler) DeleteSchedule(c fiber.Ctx) error {
 	scheduleID, err := strconv.ParseUint(c.Params("scheduleId"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid schedule ID")
 	}
 	if err := h.schedulerService.DeleteSchedule(uint(scheduleID)); err != nil {
-		return err
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to delete schedule: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
 }
@@ -155,14 +155,14 @@ func (h *BackupHandler) DeleteSchedule(c fiber.Ctx) error {
 func (h *BackupHandler) ToggleSchedule(c fiber.Ctx) error {
 	scheduleID, err := strconv.ParseUint(c.Params("scheduleId"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid schedule ID")
 	}
 
 	var form forms.ToggleSchedule
 	_ = c.Bind().Form(&form)
 
 	if err := h.schedulerService.ToggleSchedule(uint(scheduleID), form.Enabled == "true"); err != nil {
-		return err
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to toggle schedule: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
 }

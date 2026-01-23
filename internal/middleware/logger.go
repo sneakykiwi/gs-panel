@@ -14,10 +14,20 @@ func Logger() fiber.Handler {
 
 		err := c.Next()
 
-		logger.Info().
+		status := c.Response().StatusCode()
+		logEvent := logger.Info()
+
+		if status >= 400 {
+			logEvent = logger.Warn()
+		}
+		if status >= 500 {
+			logEvent = logger.Error()
+		}
+
+		logEvent.
 			Str("method", c.Method()).
 			Str("path", c.Path()).
-			Int("status", c.Response().StatusCode()).
+			Int("status", status).
 			Dur("latency", time.Since(start)).
 			Str("ip", c.IP()).
 			Msg("request")

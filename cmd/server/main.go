@@ -71,9 +71,10 @@ func main() {
 	})
 
 	app := fiber.New(fiber.Config{
-		AppName:     "GS Panel",
-		Views:       engine,
-		ViewsLayout: "layouts/base",
+		AppName:      "GS Panel",
+		Views:        engine,
+		ViewsLayout:  "layouts/base",
+		ErrorHandler: middleware.ErrorHandler(),
 	})
 
 	app.Use(middleware.Logger())

@@ -70,15 +70,15 @@ func (h *AdminHandler) CreateUser(c fiber.Ctx) error {
 func (h *AdminHandler) DeleteUser(c fiber.Ctx) error {
 	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	}
 
 	if currentUser := middleware.GetUser(c); currentUser != nil && currentUser.ID == uint(id) {
-		return c.Status(fiber.StatusBadRequest).SendString("Cannot delete yourself")
+		return fiber.NewError(fiber.StatusBadRequest, "Cannot delete yourself")
 	}
 
 	if err := h.authService.DeleteUser(uint(id)); err != nil {
-		return err
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to delete user: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
 }
@@ -86,7 +86,7 @@ func (h *AdminHandler) DeleteUser(c fiber.Ctx) error {
 func (h *AdminHandler) UserServersPage(c fiber.Ctx) error {
 	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return fiber.ErrBadRequest
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	}
 
 	targetUser, err := h.authService.GetUserByID(uint(id))
