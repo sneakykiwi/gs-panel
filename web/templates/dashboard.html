@@ -1,0 +1,77 @@
+{{define "content"}}
+<div class="flex h-screen">
+    {{template "sidebar" .}}
+
+    <main class="flex-1 p-8 overflow-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold">Game Servers</h1>
+            {{if .User.IsAdmin}}
+            <a href="/servers/new" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition">
+                + New Server
+            </a>
+            {{end}}
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="server-list">
+            {{range .Servers}}
+            {{template "server_card" .}}
+            {{else}}
+            <div class="col-span-full text-center py-12 text-gray-400">
+                <p class="text-xl mb-4">No servers yet</p>
+                {{if $.User.IsAdmin}}
+                <a href="/servers/new" class="text-blue-400 hover:underline">Create your first server</a>
+                {{end}}
+            </div>
+            {{end}}
+        </div>
+    </main>
+</div>
+{{end}}
+
+{{define "server_card"}}
+<div class="bg-gray-800 rounded-lg p-6 border border-gray-700"
+     id="server-{{.ID}}"
+     hx-get="/servers/{{.ID}}/status"
+     hx-trigger="every 5s"
+     hx-swap="outerHTML">
+    <div class="flex justify-between items-start mb-4">
+        <div>
+            <h3 class="text-xl font-semibold">{{.Name}}</h3>
+            <p class="text-gray-400 text-sm">{{.GameType}}</p>
+        </div>
+        <span class="px-2 py-1 rounded text-xs font-medium
+            {{if eq .Status "running"}}bg-green-500/20 text-green-400
+            {{else if eq .Status "starting"}}bg-yellow-500/20 text-yellow-400
+            {{else}}bg-gray-500/20 text-gray-400{{end}}">
+            {{.Status}}
+        </span>
+    </div>
+
+    <div class="text-sm text-gray-400 mb-4">
+        <p>Port: {{.Port}}</p>
+        <p>Memory: {{.MemoryLimit}} MB</p>
+    </div>
+
+    <div class="flex gap-2">
+        {{if eq .Status "running"}}
+        <button hx-post="/servers/{{.ID}}/stop" hx-swap="none"
+            class="flex-1 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-sm transition">
+            Stop
+        </button>
+        <button hx-post="/servers/{{.ID}}/restart" hx-swap="none"
+            class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm transition">
+            Restart
+        </button>
+        {{else}}
+        <button hx-post="/servers/{{.ID}}/start" hx-swap="none"
+            class="flex-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm transition">
+            Start
+        </button>
+        {{end}}
+        <a href="/servers/{{.ID}}"
+            class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm transition text-center">
+            Manage
+        </a>
+    </div>
+</div>
+{{end}}

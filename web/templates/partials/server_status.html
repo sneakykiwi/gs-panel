@@ -1,0 +1,6 @@
+<span class="px-2 py-1 rounded text-xs font-medium
+    {{if eq .Server.Status "running"}}bg-green-500/20 text-green-400
+    {{else if eq .Server.Status "starting"}}bg-yellow-500/20 text-yellow-400
+    {{else}}bg-gray-500/20 text-gray-400{{end}}">
+    {{.Server.Status}}
+</span>
