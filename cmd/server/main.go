@@ -69,6 +69,14 @@ func main() {
 	engine.AddFunc("dirname", func(path string) string {
 		return filepath.Dir(path)
 	})
+	engine.AddFunc("dict", func(values ...interface{}) map[string]interface{} {
+		dict := make(map[string]interface{})
+		for i := 0; i < len(values); i += 2 {
+			key, _ := values[i].(string)
+			dict[key] = values[i+1]
+		}
+		return dict
+	})
 
 	app := fiber.New(fiber.Config{
 		AppName:      "GS Panel",
