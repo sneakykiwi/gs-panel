@@ -36,12 +36,14 @@ func main() {
 	authService := services.NewAuthService(db)
 	serverService := services.NewServerService(db, dockerClient, cfg, templateService)
 	backupService := services.NewBackupService(db, cfg)
+	schedulerService := services.NewSchedulerService(db, backupService)
 	consoleService := services.NewConsoleService(dockerClient)
 	statsService := services.NewStatsService(dockerClient)
 
 	_ = consoleService
 	_ = statsService
 
+	schedulerService.LoadSchedules()
 	serverService.SyncAllStatuses()
 
 	rootDir := findRootDir()
@@ -68,7 +70,7 @@ func main() {
 
 	authHandler := handlers.NewAuthHandler(authService)
 	serverHandler := handlers.NewServerHandler(serverService, templateService)
-	backupHandler := handlers.NewBackupHandler(backupService, serverService)
+	backupHandler := handlers.NewBackupHandler(backupService, serverService, schedulerService)
 	adminHandler := handlers.NewAdminHandler(authService, serverService)
 	filesHandler := handlers.NewFilesHandler(serverService, cfg)
 
@@ -99,6 +101,10 @@ func main() {
 	protected.Post("/servers/:id/files/upload", filesHandler.Upload)
 	protected.Post("/servers/:id/files/mkdir", filesHandler.CreateDir)
 	protected.Delete("/servers/:id/files", filesHandler.Delete)
+	protected.Get("/servers/:id/schedules", backupHandler.ListSchedules)
+	protected.Post("/servers/:id/schedules", backupHandler.CreateSchedule)
+	protected.Delete("/schedules/:scheduleId", backupHandler.DeleteSchedule)
+	protected.Post("/schedules/:scheduleId/toggle", backupHandler.ToggleSchedule)
 
 	admin := protected.Group("", middleware.AdminOnly())
 	admin.Delete("/servers/:id", serverHandler.Delete)
