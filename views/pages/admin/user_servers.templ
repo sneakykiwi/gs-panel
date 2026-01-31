@@ -1,0 +1,73 @@
+package admin
+
+import (
+	"github.com/a-h/templ"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/views/components"
+	"github.com/sneakykiwi/gs-panel/views/layouts"
+)
+
+templ UserServersPage(user *models.User, targetUser *models.User, allServers []models.Server, userServerIDs map[string]bool) {
+	@layouts.Base("Manage User Servers", user) {
+		<div class="flex h-screen">
+			@components.Sidebar(user)
+			<main class="flex-1 p-8 overflow-auto">
+				<div class="mb-6">
+					<a href="/admin/users" class="text-gray-400 hover:text-white text-sm">← Back to Users</a>
+				</div>
+				<h1 class="text-3xl font-bold mb-2">Server Access</h1>
+				<p class="text-gray-400 mb-8">Managing access for: { targetUser.Email }</p>
+				<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+						<h2 class="text-xl font-bold mb-4">Assigned Servers</h2>
+						<ul class="space-y-2">
+							for _, server := range allServers {
+								if userServerIDs[server.ID] {
+									<li class="flex justify-between items-center p-3 bg-gray-700 rounded">
+										<span>{ server.Name }</span>
+										<button hx-delete={ "/admin/users/" + targetUser.ID + "/servers/" + server.ID }
+											hx-swap="none"
+											hx-on::after-request="location.reload()"
+											class="text-red-400 hover:text-red-300 text-sm">Remove</button>
+									</li>
+								}
+							}
+							if !hasAssignedServers(allServers, userServerIDs) {
+								<li class="text-gray-400 text-center py-4">No servers assigned</li>
+							}
+						</ul>
+					</div>
+					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+						<h2 class="text-xl font-bold mb-4">Add Server Access</h2>
+						<form method="POST" action={ "/admin/users/" + targetUser.ID + "/servers" }>
+							<div class="mb-4">
+								<select name="server_id" required
+									class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500">
+									<option value="">Select a server...</option>
+									for _, server := range allServers {
+										if !userServerIDs[server.ID] {
+											<option value={ server.ID }>{ server.Name }</option>
+										}
+									}
+								</select>
+							</div>
+							<button type="submit"
+								class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded transition">
+								Grant Access
+							</button>
+						</form>
+					</div>
+				</div>
+			</main>
+		</div>
+	}
+}
+
+func hasAssignedServers(servers []models.Server, assigned map[string]bool) bool {
+	for _, server := range servers {
+		if assigned[server.ID] {
+			return true
+		}
+	}
+	return false
+}
