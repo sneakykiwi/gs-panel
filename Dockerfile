@@ -42,6 +42,8 @@ RUN mkdir -p /data/servers /data/backups /data/logs && \
 
 USER gs-panel
 
+ENV GS_PANEL_DATA_DIR=/data
+
 EXPOSE 8080
 
 VOLUME ["/data"]
