@@ -35,7 +35,7 @@ WORKDIR /data
 
 COPY --from=builder /build/gs-panel /usr/local/bin/gs-panel
 
-COPY --from=builder /build/web /data/web
+COPY --from=builder /build/web/static /data/web/static
 
 RUN mkdir -p /data/servers /data/backups /data/logs && \
     chown -R gs-panel:gs-panel /data
