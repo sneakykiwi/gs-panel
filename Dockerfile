@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25.6-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git gcc musl-dev sqlite-dev
@@ -13,9 +13,17 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary with optimizations
+# Get version from git or use default
+ARG VERSION=0.0.1
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+
+# Build the binary with version injection
 RUN CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-w -s -X main.version=$(git describe --tags --always || echo 'dev')" \
+    -ldflags="-w -s \
+    -X gs-panel/internal/version.Version=${VERSION} \
+    -X gs-panel/internal/version.GitCommit=${GIT_COMMIT} \
+    -X gs-panel/internal/version.BuildTime=${BUILD_TIME}" \
     -o gs-panel \
     cmd/server/main.go
 

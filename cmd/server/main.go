@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"gs-panel/internal/logger"
 	"gs-panel/internal/middleware"
 	"gs-panel/internal/services"
+	"gs-panel/internal/version"
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
@@ -22,6 +24,14 @@ import (
 )
 
 func main() {
+	versionFlag := flag.Bool("version", false, "Show version information")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(version.Info())
+		os.Exit(0)
+	}
+
 	cfg := config.Load()
 
 	if err := logger.Init(cfg.Storage.Logs); err != nil {
@@ -29,7 +39,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info().Str("version", "1.0.0").Msg("Starting GS Panel")
+	logger.Info().Str("version", version.Short()).Msg("Starting GS Panel")
 
 	db, err := database.New(cfg)
 	if err != nil {
@@ -114,6 +124,15 @@ func main() {
 	backupHandler := handlers.NewBackupHandler(backupService, serverService, schedulerService, cfg)
 	adminHandler := handlers.NewAdminHandler(authService, serverService)
 	filesHandler := handlers.NewFilesHandler(serverService, cfg)
+
+	app.Get("/version", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"version":    version.Short(),
+			"commit":     version.GitCommit,
+			"build_time": version.BuildTime,
+			"go_version": version.GoVersion,
+		})
+	})
 
 	app.Get("/login", authHandler.LoginPage)
 	app.Post("/login", middleware.LoginLimiter(), authHandler.Login)

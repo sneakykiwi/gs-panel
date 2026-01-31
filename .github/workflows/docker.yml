@@ -45,6 +45,17 @@ jobs:
           type=semver,pattern={{major}}
           type=sha,prefix=,suffix=,format=short
 
+    - name: Get version info
+      id: version
+      run: |
+        VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+        if [[ "${{ github.ref }}" != refs/tags/* ]]; then
+          VERSION="0.0.1-dev-${{ github.sha_short }}"
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "GIT_COMMIT=${{ github.sha }}" >> $GITHUB_OUTPUT
+        echo "BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
@@ -55,3 +66,7 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
         platforms: linux/amd64,linux/arm64
+        build-args: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          GIT_COMMIT=${{ steps.version.outputs.GIT_COMMIT }}
+          BUILD_TIME=${{ steps.version.outputs.BUILD_TIME }}

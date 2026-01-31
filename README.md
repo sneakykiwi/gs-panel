@@ -157,21 +157,32 @@ gs-panel/
 ### Build
 
 ```bash
-# Build binary
-go build -o bin/server cmd/server/main.go
+# Build with version (0.0.1)
+make build
 
-# Build with version
-CGO_ENABLED=1 go build -ldflags "-X main.version=1.0.0" -o bin/server cmd/server/main.go
+# Development build (fast, no version injection)
+make build-dev
+
+# Build for all platforms
+make release
 ```
 
 ### Run
 
 ```bash
 # Development
+make run-dev
+
+# Or manually
 ./bin/server
 
-# With custom config
-./bin/server -config config.yaml
+# Check version
+./bin/server --version
+# Output: GS Panel v0.0.1 (commit: abc123, built: 2026-01-31T12:00:00Z, go: go1.22)
+
+# Version API endpoint (no auth required)
+curl http://localhost:8080/version
+# {"version":"0.0.1","commit":"abc123","build_time":"2026-01-31T12:00:00Z","go_version":"go1.22"}
 ```
 
 ## Configuration
