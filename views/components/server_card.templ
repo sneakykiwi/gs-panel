@@ -1,0 +1,21 @@
+package components
+
+import (
+	"strconv"
+
+	"github.com/a-h/templ"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+)
+
+templ ServerCard(server models.Server) {
+	<div class="bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-gray-600 transition cursor-pointer" hx-get={ "/servers/" + server.ID } hx-push-url="true">
+		<div class="flex justify-between items-start mb-4">
+			<h3 class="text-lg font-semibold">{ server.Name }</h3>
+			<span class={ "px-2 py-1 rounded text-xs font-medium", templ.KV("bg-green-500/20 text-green-300", server.Status == "running"), templ.KV("bg-red-500/20 text-red-300", server.Status == "stopped"), templ.KV("bg-yellow-500/20 text-yellow-300", server.Status == "starting") }>
+				{ string(server.Status) }
+			</span>
+		</div>
+		<p class="text-gray-400 text-sm mb-2">{ server.GameType }</p>
+		<p class="text-gray-500 text-xs">Port: { strconv.Itoa(server.Port) }</p>
+	</div>
+}

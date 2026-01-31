@@ -1,0 +1,23 @@
+package components
+
+import (
+	"github.com/a-h/templ"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+)
+
+templ BackupItem(backup models.Backup, serverID string) {
+	<li class="flex justify-between items-center p-3 bg-gray-700 rounded" id={ "backup-" + backup.ID }>
+		<div class="flex-1">
+			<p class="font-medium">{ backup.Name }</p>
+			<p class="text-sm text-gray-400">{ backup.CreatedAt.Format("Jan 02, 2006 15:04") }</p>
+		</div>
+		<div class="flex gap-3">
+			<a href={ templ.SafeURL("/backups/" + backup.ID + "/download") } class="text-blue-400 hover:text-blue-300 text-sm">Download</a>
+			<button hx-delete={ "/servers/" + serverID + "/backups/" + backup.ID }
+				hx-confirm="Delete this backup?"
+				hx-target={ "#backup-" + backup.ID }
+				hx-swap="outerHTML"
+				class="text-red-400 hover:text-red-300 text-sm">Delete</button>
+		</div>
+	</li>
+}

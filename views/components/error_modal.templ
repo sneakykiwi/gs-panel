@@ -1,0 +1,24 @@
+package components
+
+import (
+	"strconv"
+
+	"github.com/a-h/templ"
+)
+
+templ ErrorModal(code int, message string) {
+	<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" id="error-modal">
+		<div class="bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-md text-center">
+			<div class="text-6xl font-bold text-red-500 mb-4">{ strconv.Itoa(code) }</div>
+			<h1 class="text-2xl font-bold mb-4">Something went wrong</h1>
+			<p class="text-gray-400 mb-6">{ message }</p>
+			<button onclick="document.getElementById('error-modal').remove()"
+				class="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded transition mr-2">
+				Close
+			</button>
+			<a href="/" class="inline-block bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded transition">
+				Go to Dashboard
+			</a>
+		</div>
+	</div>
+}
