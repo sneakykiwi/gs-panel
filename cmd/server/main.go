@@ -19,7 +19,6 @@ import (
 	"github.com/gofiber/fiber/v3/extractors"
 	"github.com/gofiber/fiber/v3/middleware/csrf"
 	"github.com/gofiber/fiber/v3/middleware/static"
-	"github.com/gofiber/template/html/v2"
 	"github.com/moby/moby/client"
 )
 
@@ -66,33 +65,10 @@ func main() {
 	schedulerService.LoadSchedules()
 	serverService.SyncAllStatuses()
 
-	rootDir := findRootDir()
-	templatesPath := filepath.Join(rootDir, "web", "templates")
-	staticPath := filepath.Join(rootDir, "web", "static")
-
-	engine := html.New(templatesPath, ".html")
-	engine.AddFunc("eq", func(a, b interface{}) bool {
-		return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
-	})
-	engine.AddFunc("divf", func(a, b int64) float64 {
-		return float64(a) / float64(b)
-	})
-	engine.AddFunc("dirname", func(path string) string {
-		return filepath.Dir(path)
-	})
-	engine.AddFunc("dict", func(values ...interface{}) map[string]interface{} {
-		dict := make(map[string]interface{})
-		for i := 0; i < len(values); i += 2 {
-			key, _ := values[i].(string)
-			dict[key] = values[i+1]
-		}
-		return dict
-	})
+	staticPath := findStaticDir()
 
 	app := fiber.New(fiber.Config{
 		AppName:      "GS Panel",
-		Views:        engine,
-		ViewsLayout:  "layouts/base",
 		ErrorHandler: middleware.ErrorHandler(),
 	})
 
@@ -162,12 +138,8 @@ func main() {
 	protected.Get("/backups/:backupId/download", backupHandler.Download)
 	protected.Get("/servers/:id/files", filesHandler.List)
 	protected.Get("/servers/:id/files/view", filesHandler.View)
-	protected.Get("/servers/:id/files/download", filesHandler.Download)
-	protected.Post("/servers/:id/files/save", filesHandler.Save)
 	protected.Post("/servers/:id/files/upload", filesHandler.Upload)
-	protected.Post("/servers/:id/files/mkdir", filesHandler.CreateDir)
-	protected.Post("/servers/:id/files/rename", filesHandler.Rename)
-	protected.Post("/servers/:id/files/move", filesHandler.Move)
+	protected.Post("/servers/:id/files/mkdir", filesHandler.Mkdir)
 	protected.Delete("/servers/:id/files", filesHandler.Delete)
 	protected.Get("/servers/:id/schedules", backupHandler.ListSchedules)
 	protected.Post("/servers/:id/schedules", backupHandler.CreateSchedule)
@@ -204,23 +176,23 @@ func main() {
 	}
 }
 
-func findRootDir() string {
+func findStaticDir() string {
 	exe, err := os.Executable()
 	if err == nil {
 		dir := filepath.Dir(exe)
-		if _, err := os.Stat(filepath.Join(dir, "web")); err == nil {
-			return dir
+		if _, err := os.Stat(filepath.Join(dir, "web", "static")); err == nil {
+			return filepath.Join(dir, "web", "static")
 		}
 	}
 
 	wd, err := os.Getwd()
 	if err == nil {
-		if _, err := os.Stat(filepath.Join(wd, "web")); err == nil {
-			return wd
+		if _, err := os.Stat(filepath.Join(wd, "web", "static")); err == nil {
+			return filepath.Join(wd, "web", "static")
 		}
-		parent := filepath.Dir(filepath.Dir(wd))
-		if _, err := os.Stat(filepath.Join(parent, "web")); err == nil {
-			return parent
+		parent := filepath.Dir(wd)
+		if _, err := os.Stat(filepath.Join(parent, "web", "static")); err == nil {
+			return filepath.Join(parent, "web", "static")
 		}
 	}
 

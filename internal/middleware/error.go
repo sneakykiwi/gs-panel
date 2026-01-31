@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"github.com/sneakykiwi/gs-panel/internal/logger"
+	"github.com/sneakykiwi/gs-panel/views/components"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -43,10 +43,6 @@ func ErrorHandler() fiber.ErrorHandler {
 			return c.Status(code).SendString(`<div class="bg-red-500/20 border border-red-500 text-red-300 px-4 py-3 rounded" role="alert">` + message + `</div>`)
 		}
 
-		return c.Status(code).Render("error", fiber.Map{
-			"Title":   "Error",
-			"Code":    code,
-			"Message": message,
-		}, "layouts/base")
+		return Render(c, components.ErrorModal(code, message))
 	}
 }
