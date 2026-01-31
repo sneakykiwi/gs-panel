@@ -228,7 +228,14 @@ func findRootDir() string {
 }
 
 func printBanner() {
-	banner := `
+	versionStr := version.Short()
+	padding := 35 - len(versionStr)
+	if padding < 0 {
+		padding = 0
+	}
+	versionLine := fmt.Sprintf("%*s%s%*s", padding/2, "", "v"+versionStr, padding-padding/2, "")
+
+	banner := fmt.Sprintf(`
   ╔══════════════════════════════════════════════════════════════════════╗
   ║                                                                      ║
   ║    ██████╗ ███████╗    ██████╗  █████╗ ███╗   ██╗███████╗██╗         ║
@@ -238,8 +245,8 @@ func printBanner() {
   ║   ╚██████╔╝███████║    ██║     ██║  ██║██║ ╚████║███████╗███████╗    ║
   ║    ╚═════╝ ╚══════╝    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝    ║
   ║                                                                      ║
-  ║                 Game Server Management Panel v1.0.0                  ║
+  ║%s║
   ╚══════════════════════════════════════════════════════════════════════╝
-`
+`, versionLine)
 	fmt.Print(banner)
 }
