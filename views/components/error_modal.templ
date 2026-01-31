@@ -1,10 +1,6 @@
 package components
 
-import (
-	"strconv"
-
-	"github.com/a-h/templ"
-)
+import "strconv"
 
 templ ErrorModal(code int, message string) {
 	<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" id="error-modal">
