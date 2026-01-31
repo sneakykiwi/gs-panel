@@ -192,19 +192,6 @@ storage:
   logs: ./data/logs
 ```
 
-## Comparison
-
-| Feature | GS Panel | Pterodactyl | AMP | LinuxGSM |
-|---------|----------|-------------|-----|----------|
-| **Setup Time** | 5 min | 30+ min | 20 min | 15 min |
-| **Dependencies** | None | PHP, MySQL, Redis | .NET | None |
-| **RAM Usage** | ~50MB | ~500MB | ~300MB | ~10MB |
-| **Database** | SQLite (built-in) | MySQL/PostgreSQL | SQLite | None |
-| **Web UI** | ✅ | ✅ | ✅ | ❌ |
-| **Docker** | Simple | Complex | Simple | N/A |
-| **Backups** | ✅ | ✅ | ✅ | Manual |
-| **Multi-user** | ✅ | ✅ | ✅ | ❌ |
-
 ## Roadmap
 
 ### Completed ✅
