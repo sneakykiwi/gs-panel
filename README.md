@@ -176,20 +176,24 @@ CGO_ENABLED=1 go build -ldflags "-X main.version=1.0.0" -o bin/server cmd/server
 
 ## Configuration
 
-Environment variables or `config.yaml`:
+All configuration is done via environment variables. Copy `.env.example` to `.env` and adjust:
 
-```yaml
-server:
-  host: 0.0.0.0
-  port: 8080
+```bash
+# Server
+GS_PANEL_HOST=0.0.0.0
+GS_PANEL_PORT=8080
 
-database:
-  path: ./data/gs-panel.db
+# Base data directory (defaults to ./data on Windows, /var/lib/gs-panel on Linux)
+GS_PANEL_DATA_DIR=./data
 
-storage:
-  servers: ./data/servers
-  backups: ./data/backups
-  logs: ./data/logs
+# Or set individual paths
+GS_PANEL_DB_PATH=./data/panel.db
+GS_PANEL_SERVERS_DIR=./data/servers
+GS_PANEL_BACKUPS_DIR=./data/backups
+GS_PANEL_LOGS_DIR=./data/logs
+
+# Docker socket (auto-detected, usually don't need to change)
+GS_PANEL_DOCKER_SOCKET=/var/run/docker.sock
 ```
 
 ## Roadmap
