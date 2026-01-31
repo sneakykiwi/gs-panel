@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"gs-panel/internal/config"
 	"gs-panel/internal/forms"
 	"gs-panel/internal/middleware"
 	"gs-panel/internal/models"
 	"gs-panel/internal/services"
+	"gs-panel/views/partials"
+	"path/filepath"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -13,10 +16,16 @@ type BackupHandler struct {
 	backupService    *services.BackupService
 	serverService    *services.ServerService
 	schedulerService *services.SchedulerService
+	cfg              *config.Config
 }
 
-func NewBackupHandler(backupService *services.BackupService, serverService *services.ServerService, schedulerService *services.SchedulerService) *BackupHandler {
-	return &BackupHandler{backupService: backupService, serverService: serverService, schedulerService: schedulerService}
+func NewBackupHandler(backupService *services.BackupService, serverService *services.ServerService, schedulerService *services.SchedulerService, cfg *config.Config) *BackupHandler {
+	return &BackupHandler{
+		backupService:    backupService,
+		serverService:    serverService,
+		schedulerService: schedulerService,
+		cfg:              cfg,
+	}
 }
 
 func (h *BackupHandler) List(c fiber.Ctx) error {
@@ -30,7 +39,7 @@ func (h *BackupHandler) List(c fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to list backups: "+err.Error())
 	}
 
-	return c.Render("partials/backup_list", fiber.Map{"Backups": backups, "ServerID": serverID})
+	return Render(c, partials.BackupList(backups, serverID))
 }
 
 func (h *BackupHandler) Create(c fiber.Ctx) error {
@@ -50,7 +59,7 @@ func (h *BackupHandler) Create(c fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusConflict, "Failed to create backup: "+err.Error())
 	}
 
-	return c.Render("partials/backup_item", fiber.Map{"Backup": backup})
+	return Render(c, partials.BackupItem(backup, serverID))
 }
 
 func (h *BackupHandler) Delete(c fiber.Ctx) error {
@@ -163,4 +172,28 @@ func (h *BackupHandler) ToggleSchedule(c fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to toggle schedule: "+err.Error())
 	}
 	return c.SendStatus(fiber.StatusOK)
+}
+
+func (h *BackupHandler) Download(c fiber.Ctx) error {
+	backupID := c.Params("backupId")
+	if backupID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid backup ID")
+	}
+
+	backup, err := h.backupService.Get(backupID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "Backup not found")
+	}
+
+	// Check permissions
+	user := middleware.GetUser(c)
+	if !user.IsAdmin && !h.serverService.HasAccess(user.ID, backup.ServerID) {
+		return fiber.ErrForbidden
+	}
+
+	// Construct backup file path
+	backupPath := filepath.Join(h.cfg.Storage.Backups, backup.Filename)
+
+	// Stream file
+	return c.Download(backupPath, backup.Name+".tar.gz")
 }

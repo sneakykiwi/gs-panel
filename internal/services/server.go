@@ -207,6 +207,18 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 	}
 
 	serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
+	serverPath = filepath.Clean(serverPath)
+	if !filepath.IsAbs(serverPath) {
+		abs, err := filepath.Abs(serverPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve server path: %w", err)
+		}
+		serverPath = abs
+	}
+	if _, err := os.Stat(serverPath); err != nil {
+		return "", fmt.Errorf("server data directory not found: %s (%w)", serverPath, err)
+	}
+
 	tcpPort := network.MustParsePort(fmt.Sprintf("%d/tcp", server.Port))
 	udpPort := network.MustParsePort(fmt.Sprintf("%d/udp", server.Port))
 	portStr := fmt.Sprintf("%d", server.Port)
@@ -306,4 +318,86 @@ func (s *ServerService) SyncAllStatuses() error {
 	}
 
 	return nil
+}
+
+func (s *ServerService) UserHasAccess(userID, serverID string) (bool, error) {
+	var count int64
+	// server_users is the join table configured by gorm many2many.
+	if err := s.db.Table("server_users").Where("server_id = ? AND user_id = ?", serverID, userID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+type UpdateServerRequest struct {
+	Name        string
+	MemoryLimit int
+	Port        int
+}
+
+func (s *ServerService) Update(id string, req UpdateServerRequest) error {
+	// Get server
+	server, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+
+	// Validate port conflicts if port is being changed
+	if req.Port != server.Port {
+		if err := s.ValidatePort(req.Port, id); err != nil {
+			return err
+		}
+	}
+
+	// Check if server is running
+	isRunning := server.Status == models.ServerStatusRunning
+
+	// Stop server if running (to apply new configuration)
+	if isRunning {
+		if err := s.Stop(id); err != nil {
+			return fmt.Errorf("failed to stop server: %w", err)
+		}
+	}
+
+	// Update database
+	server.Name = req.Name
+	server.MemoryLimit = req.MemoryLimit
+	server.Port = req.Port
+
+	// Update environment variables with new memory limit
+	env := s.templates.DecodeEnvironment(server.Environment)
+	for k, v := range env {
+		env[k] = strings.ReplaceAll(v, strconv.Itoa(server.MemoryLimit), strconv.Itoa(req.MemoryLimit))
+	}
+	server.Environment = s.templates.EncodeEnvironment(env)
+
+	if err := s.db.Save(server).Error; err != nil {
+		return fmt.Errorf("failed to update server: %w", err)
+	}
+
+	// Restart server if it was running
+	if isRunning {
+		if err := s.Start(id); err != nil {
+			return fmt.Errorf("server updated but failed to restart: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (s *ServerService) ValidatePort(port int, excludeServerID string) error {
+	var count int64
+	s.db.Model(&models.Server{}).
+		Where("port = ? AND id != ? AND deleted_at IS NULL", port, excludeServerID).
+		Count(&count)
+
+	if count > 0 {
+		return errors.New("port already in use by another server")
+	}
+	return nil
+}
+
+func (s *ServerService) HasAccess(userID, serverID string) bool {
+	hasAccess, _ := s.UserHasAccess(userID, serverID)
+	return hasAccess
 }

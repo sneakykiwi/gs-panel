@@ -1,0 +1,22 @@
+package partials
+
+import "gs-panel/internal/models"
+
+templ ServerStatusBadge(status models.ServerStatus) {
+	<div id="server-status">
+		<span class={ "px-3 py-1 rounded text-sm font-medium " + statusClass(status) }>
+			{ string(status) }
+		</span>
+	</div>
+}
+
+func statusClass(status models.ServerStatus) string {
+	switch status {
+	case models.ServerStatusRunning:
+		return "bg-green-500/20 text-green-400"
+	case models.ServerStatusStarting:
+		return "bg-yellow-500/20 text-yellow-400"
+	default:
+		return "bg-gray-500/20 text-gray-400"
+	}
+}

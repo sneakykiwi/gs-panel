@@ -24,9 +24,9 @@ var defaultTemplates = []GameTemplate{
 		DefaultPort:   25565,
 		DefaultMemory: 2048,
 		Environment: map[string]string{
-			"EULA":   "TRUE",
-			"TYPE":   "VANILLA",
-			"MEMORY": "{{MEMORY}}M",
+			"EULA":       "TRUE",
+			"TYPE":       "VANILLA",
+			"MAX_MEMORY": "{{MEMORY}}M",
 		},
 		StopCommand: "stop",
 		SaveCommand: "save-all",
@@ -82,31 +82,6 @@ var defaultTemplates = []GameTemplate{
 		},
 		StopCommand: "",
 		SaveCommand: "",
-	},
-	{
-		ID:            "cs2",
-		Name:          "Counter-Strike 2",
-		DockerImage:   "joedwards32/cs2:latest",
-		DefaultPort:   27015,
-		DefaultMemory: 4096,
-		Environment: map[string]string{
-			"CS2_SERVERNAME": "CS2 Server",
-			"CS2_PORT":       "27015",
-		},
-		StopCommand: "quit",
-		SaveCommand: "",
-	},
-	{
-		ID:            "zomboid",
-		Name:          "Project Zomboid",
-		DockerImage:   "renegademaster/zomboid-dedicated-server:latest",
-		DefaultPort:   16261,
-		DefaultMemory: 4096,
-		Environment: map[string]string{
-			"SERVER_NAME": "ZomboidServer",
-		},
-		StopCommand: "quit",
-		SaveCommand: "save",
 	},
 }
 

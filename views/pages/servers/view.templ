@@ -1,0 +1,188 @@
+package servers
+
+import (
+	"gs-panel/internal/models"
+	"gs-panel/views/layouts"
+	"gs-panel/views/components"
+	"gs-panel/views/partials"
+	"strconv"
+)
+
+templ ViewPage(server *models.Server, user *models.User) {
+	@layouts.Base(server.Name, user) {
+		<div class="flex h-screen">
+			@components.Sidebar(user)
+			
+			<main class="flex-1 p-8 overflow-auto">
+				<div class="mb-6">
+					<a href="/" class="text-gray-400 hover:text-white text-sm">← Back to Dashboard</a>
+				</div>
+				
+				<div class="flex justify-between items-start mb-8">
+					<div>
+						<h1 class="text-3xl font-bold">{ server.Name }</h1>
+						<p class="text-gray-400">{ server.GameType }</p>
+					</div>
+					
+					<div 
+						hx-get={ "/servers/" + server.ID + "/status-badge" }
+						hx-trigger="load, every 3s"
+						hx-swap="outerHTML"
+					>
+						@partials.ServerStatusBadge(server.Status)
+					</div>
+				</div>
+				
+				<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+						<h3 class="text-sm font-medium text-gray-400 mb-2">Port</h3>
+						<p class="text-2xl font-bold">{ strconv.Itoa(server.Port) }</p>
+					</div>
+					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+						<h3 class="text-sm font-medium text-gray-400 mb-2">Memory Limit</h3>
+						<p class="text-2xl font-bold">{ strconv.Itoa(server.MemoryLimit) } MB</p>
+					</div>
+					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+						<h3 class="text-sm font-medium text-gray-400 mb-2">Docker Image</h3>
+						<p class="text-sm font-mono truncate" title={ server.DockerImage }>
+							{ server.DockerImage }
+						</p>
+					</div>
+				</div>
+				
+			<div class="bg-gray-800 rounded-lg p-6 border border-gray-700 mb-8" x-data="{ loading: false, action: '' }">
+				<h2 class="text-xl font-bold mb-4">Controls</h2>
+				@partials.ServerControls(server, user.IsAdmin)
+			</div>
+				
+				<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+					<!-- CONSOLE -->
+					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+						<h2 class="text-xl font-bold mb-4">Console</h2>
+						
+						<div 
+							id="console-out"
+							class="bg-gray-900 rounded p-4 h-64 overflow-auto font-mono text-sm text-gray-300 whitespace-pre-wrap"
+						></div>
+						
+						<form id="console-form" class="mt-4 flex gap-2">
+							<input 
+								type="text"
+								id="console-input"
+								name="command"
+								placeholder="Enter command..."
+								class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded"
+							/>
+							<button 
+								type="submit"
+								class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+							>
+								Send
+							</button>
+						</form>
+					</div>
+					
+					<!-- STATS -->
+					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+						<h2 class="text-xl font-bold mb-4">Stats</h2>
+						
+						<div class="grid grid-cols-2 gap-4 text-sm text-gray-300">
+							<div class="bg-gray-900 rounded p-4">
+								<div class="text-gray-400">CPU</div>
+								<div id="cpu-value" class="text-xl font-bold">—</div>
+							</div>
+							<div class="bg-gray-900 rounded p-4">
+								<div class="text-gray-400">Memory</div>
+								<div id="mem-value" class="text-xl font-bold">—</div>
+							</div>
+							<div class="bg-gray-900 rounded p-4">
+								<div class="text-gray-400">Net RX</div>
+								<div id="rx-value" class="text-xl font-bold">—</div>
+							</div>
+							<div class="bg-gray-900 rounded p-4">
+								<div class="text-gray-400">Net TX</div>
+								<div id="tx-value" class="text-xl font-bold">—</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				
+				<!-- BACKUPS SECTION -->
+				<div 
+					hx-get={ "/servers/" + server.ID + "/backups" }
+					hx-trigger="load, backup-created from:body"
+					hx-swap="innerHTML"
+				>
+					@components.BackupSkeleton()
+				</div>
+				
+				@WebSocketScript(server.ID)
+			</main>
+		</div>
+	}
+}
+
+templ StatusBadge(status models.ServerStatus) {
+	<span class={ "px-3 py-1 rounded text-sm font-medium " + statusClass(status) }>
+		{ string(status) }
+	</span>
+}
+
+script webSocketScriptContent(serverID string) {
+	(function() {
+		const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+		const wsUrl = `${scheme}//${location.host}/servers/${serverID}/ws?interval=1000`;
+
+			let ws = null;
+			const consoleOut = document.getElementById('console-out');
+			const consoleForm = document.getElementById('console-form');
+			const consoleInput = document.getElementById('console-input');
+			
+			function connect() {
+				ws = new WebSocket(wsUrl);
+			ws.onmessage = function(ev) {
+				try {
+					const msg = JSON.parse(ev.data);
+					if (msg.type === 'log') {
+						consoleOut.appendChild(document.createTextNode(msg.data));
+						consoleOut.scrollTop = consoleOut.scrollHeight;
+					} else if (msg.type === 'stats' && msg.data) {
+						document.getElementById('cpu-value').textContent = msg.data.cpu || '—';
+						document.getElementById('mem-value').textContent = msg.data.mem || '—';
+						document.getElementById('rx-value').textContent = msg.data.rx || '—';
+						document.getElementById('tx-value').textContent = msg.data.tx || '—';
+					}
+				} catch (_) {}
+			};
+			ws.onclose = function() {
+				ws = null;
+				setTimeout(connect, 3000);
+			};
+		}
+		
+		connect();
+		
+		consoleForm.addEventListener('submit', function(e) {
+			e.preventDefault();
+			const cmd = (consoleInput.value || '').trim();
+			if (!cmd || !ws || ws.readyState !== WebSocket.OPEN) return;
+			ws.send(JSON.stringify({ type: 'command', data: cmd }));
+			consoleInput.value = '';
+		});
+	})();
+}
+
+templ WebSocketScript(serverID string) {
+	@webSocketScriptContent(serverID)
+}
+
+func statusClass(status models.ServerStatus) string {
+	switch status {
+	case models.ServerStatusRunning:
+		return "bg-green-500/20 text-green-400"
+	case models.ServerStatusStarting:
+		return "bg-yellow-500/20 text-yellow-400"
+	default:
+		return "bg-gray-500/20 text-gray-400"
+	}
+}

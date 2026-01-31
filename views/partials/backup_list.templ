@@ -1,0 +1,139 @@
+package partials
+
+import (
+	"gs-panel/internal/models"
+	"gs-panel/views/components"
+	"time"
+	"strconv"
+	"fmt"
+)
+
+templ BackupList(backups []models.Backup, serverID string) {
+	<div class="bg-gray-800 rounded-lg p-6 border border-gray-700 mt-8">
+		<div class="flex justify-between items-center mb-4">
+			<h2 class="text-xl font-bold">Backups</h2>
+			@components.BackupCreateModal(serverID)
+		</div>
+		
+		<div id="backup-list" class="space-y-3">
+			if len(backups) == 0 {
+				<p class="text-gray-400 text-center py-8">No backups yet</p>
+			} else {
+				for _, backup := range backups {
+					@BackupItem(&backup, serverID)
+				}
+			}
+		</div>
+	</div>
+}
+
+templ BackupItem(backup *models.Backup, serverID string) {
+	<div class="bg-gray-700 rounded p-4 flex justify-between items-center" x-data="{ loading: false, action: '' }">
+		<div class="flex-1">
+			<h3 class="font-semibold">{ backup.Name }</h3>
+			if backup.Description != "" {
+				<p class="text-sm text-gray-400">{ backup.Description }</p>
+			}
+			<div class="text-xs text-gray-500 mt-1">
+				<span>{ formatFileSize(backup.SizeBytes) }</span>
+				<span class="mx-2">•</span>
+				<span>{ formatTime(backup.CreatedAt) }</span>
+				<span class="mx-2">•</span>
+				<span class={ backupTypeClass(backup.Type) }>{ string(backup.Type) }</span>
+			</div>
+		</div>
+		
+		<div class="flex gap-2 items-center">
+			<!-- Download -->
+			<a 
+				href={ templ.URL("/backups/" + backup.ID + "/download") }
+				class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm transition inline-flex items-center gap-1"
+				title="Download"
+				@click="showToast('info', 'Downloading backup...')"
+			>
+				⬇
+			</a>
+			
+			<!-- Restore -->
+			<button 
+				hx-post={ "/backups/" + backup.ID + "/restore" }
+				hx-confirm="Are you sure you want to restore this backup? This will overwrite current server files."
+				@click="loading = true; action = 'restore'"
+				@htmx:after-request="loading = false; action = ''; showToast('success', 'Backup restored successfully')"
+				@htmx:response-error="loading = false; action = ''"
+				:disabled="loading"
+				class="bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1 rounded text-sm transition inline-flex items-center gap-1"
+				title="Restore"
+			>
+				<span x-show="loading && action === 'restore'" x-cloak class="text-xs">
+					@components.InlineSpinner()
+				</span>
+				<span x-show="!loading || action !== 'restore'">↻</span>
+			</button>
+			
+			<!-- Verify -->
+			<button 
+				hx-get={ "/backups/" + backup.ID + "/verify" }
+				hx-target={ "#verify-result-" + backup.ID }
+				@click="loading = true; action = 'verify'"
+				@htmx:after-request="loading = false; action = ''"
+				@htmx:response-error="loading = false; action = ''"
+				:disabled="loading"
+				class="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1 rounded text-sm transition inline-flex items-center gap-1"
+				title="Verify"
+			>
+				<span x-show="loading && action === 'verify'" x-cloak class="text-xs">
+					@components.InlineSpinner()
+				</span>
+				<span x-show="!loading || action !== 'verify'">✓</span>
+			</button>
+			
+			<!-- Delete -->
+			<button 
+				hx-delete={ "/backups/" + backup.ID }
+				hx-confirm="Are you sure you want to delete this backup?"
+				hx-target="closest div"
+				hx-swap="outerHTML swap:1s"
+				@click="loading = true; action = 'delete'"
+				:disabled="loading"
+				class="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1 rounded text-sm transition inline-flex items-center gap-1"
+				title="Delete"
+			>
+				<span x-show="loading && action === 'delete'" x-cloak class="text-xs">
+					@components.InlineSpinner()
+				</span>
+				<span x-show="!loading || action !== 'delete'">✕</span>
+			</button>
+			
+			<div id={ "verify-result-" + backup.ID } class="ml-2 text-xs"></div>
+		</div>
+	</div>
+}
+
+func formatFileSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return strconv.FormatInt(bytes, 10) + " B"
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %sB", float64(bytes)/float64(div), "KMGTPE"[exp:exp+1])
+}
+
+func formatTime(t time.Time) string {
+	return t.Format("Jan 2, 2006 15:04")
+}
+
+func backupTypeClass(backupType models.BackupType) string {
+	switch backupType {
+	case models.BackupTypeManual:
+		return "text-blue-400"
+	case models.BackupTypeScheduled:
+		return "text-green-400"
+	default:
+		return "text-gray-400"
+	}
+}

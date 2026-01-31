@@ -1,0 +1,26 @@
+package components
+
+templ BackupSkeleton() {
+	<div class="bg-gray-800 rounded-lg p-6 border border-gray-700 mt-8">
+		<div class="flex justify-between items-center mb-4">
+			<div class="h-6 bg-gray-700 rounded w-32 animate-pulse"></div>
+			<div class="h-10 bg-gray-700 rounded w-40 animate-pulse"></div>
+		</div>
+		
+		<div class="space-y-3">
+			for i := 0; i < 3; i++ {
+				<div class="bg-gray-700 rounded p-4 animate-pulse">
+					<div class="h-5 bg-gray-600 rounded w-48 mb-2"></div>
+					<div class="h-3 bg-gray-600 rounded w-64"></div>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+templ CardSkeleton() {
+	<div class="bg-gray-800 rounded-lg p-6 border border-gray-700 animate-pulse">
+		<div class="h-4 bg-gray-700 rounded w-24 mb-4"></div>
+		<div class="h-8 bg-gray-700 rounded w-32"></div>
+	</div>
+}

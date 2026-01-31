@@ -57,3 +57,9 @@ type ToggleSchedule struct {
 type AssignServer struct {
 	ServerID string `form:"server_id"`
 }
+
+type UpdateServer struct {
+	Name        string `form:"name"`
+	MemoryLimit int    `form:"memory_limit"`
+	Port        int    `form:"port"`
+}

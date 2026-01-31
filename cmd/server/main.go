@@ -12,6 +12,7 @@ import (
 	"gs-panel/internal/middleware"
 	"gs-panel/internal/services"
 
+	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/gofiber/template/html/v2"
@@ -34,7 +35,7 @@ func main() {
 	}
 	logger.Info().Str("path", cfg.Database.Path).Msg("Database connected")
 
-	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	dockerClient, err := client.New(client.FromEnv)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("Failed to connect to Docker")
 	}
@@ -48,6 +49,7 @@ func main() {
 	schedulerService := services.NewSchedulerService(db, backupService)
 	consoleService := services.NewConsoleService(dockerClient)
 	statsService := services.NewStatsService(dockerClient)
+	streamHandler := handlers.NewStreamHandler(serverService, consoleService, statsService)
 
 	_ = consoleService
 	_ = statsService
@@ -90,7 +92,7 @@ func main() {
 
 	authHandler := handlers.NewAuthHandler(authService)
 	serverHandler := handlers.NewServerHandler(serverService, templateService)
-	backupHandler := handlers.NewBackupHandler(backupService, serverService, schedulerService)
+	backupHandler := handlers.NewBackupHandler(backupService, serverService, schedulerService, cfg)
 	adminHandler := handlers.NewAdminHandler(authService, serverService)
 	filesHandler := handlers.NewFilesHandler(serverService, cfg)
 
@@ -105,16 +107,21 @@ func main() {
 	protected.Get("/servers/new", serverHandler.CreatePage)
 	protected.Post("/servers", serverHandler.Create)
 	protected.Get("/servers/:id", serverHandler.View)
+	protected.Get("/servers/:id/edit", serverHandler.EditPage)
+	protected.Put("/servers/:id", serverHandler.Update)
 	protected.Post("/servers/:id/start", serverHandler.Start)
 	protected.Post("/servers/:id/stop", serverHandler.Stop)
 	protected.Post("/servers/:id/restart", serverHandler.Restart)
 	protected.Get("/servers/:id/status", serverHandler.Status)
+	protected.Get("/servers/:id/status-badge", serverHandler.StatusBadge)
+	protected.Get("/servers/:id/controls", serverHandler.Controls)
 	protected.Get("/servers/:id/backups", backupHandler.List)
 	protected.Post("/servers/:id/backups", backupHandler.Create)
 	protected.Get("/servers/:id/backups/progress", backupHandler.Progress)
 	protected.Delete("/backups/:backupId", backupHandler.Delete)
 	protected.Post("/backups/:backupId/restore", backupHandler.Restore)
 	protected.Get("/backups/:backupId/verify", backupHandler.Verify)
+	protected.Get("/backups/:backupId/download", backupHandler.Download)
 	protected.Get("/servers/:id/files", filesHandler.List)
 	protected.Get("/servers/:id/files/view", filesHandler.View)
 	protected.Post("/servers/:id/files/save", filesHandler.Save)
@@ -125,6 +132,16 @@ func main() {
 	protected.Post("/servers/:id/schedules", backupHandler.CreateSchedule)
 	protected.Delete("/schedules/:scheduleId", backupHandler.DeleteSchedule)
 	protected.Post("/schedules/:scheduleId/toggle", backupHandler.ToggleSchedule)
+
+	protected.Get("/servers/:id/ws", func(c fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			// Store user in websocket-friendly way
+			user := middleware.GetUser(c)
+			c.Locals(middleware.UserContextKey, user)
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	}, websocket.New(streamHandler.HandleServerWS))
 
 	admin := protected.Group("", middleware.AdminOnly())
 	admin.Delete("/servers/:id", serverHandler.Delete)

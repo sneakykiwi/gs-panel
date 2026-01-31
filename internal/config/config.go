@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -79,6 +80,7 @@ func getEnv(key, defaultValue string) string {
 
 func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
+		value = strings.TrimSpace(value)
 		if i, err := strconv.Atoi(value); err == nil {
 			return i
 		}

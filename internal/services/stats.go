@@ -10,7 +10,7 @@ import (
 )
 
 type ContainerStats struct {
-	ServerID    uint      `json:"server_id"`
+	ServerID    string    `json:"server_id"`
 	CPUPercent  float64   `json:"cpu_percent"`
 	MemoryUsed  uint64    `json:"memory_used"`
 	MemoryLimit uint64    `json:"memory_limit"`
@@ -22,24 +22,24 @@ type ContainerStats struct {
 
 type StatsService struct {
 	docker *client.Client
-	cache  map[uint]*ContainerStats
+	cache  map[string]*ContainerStats
 	mu     sync.RWMutex
 }
 
 func NewStatsService(docker *client.Client) *StatsService {
 	return &StatsService{
 		docker: docker,
-		cache:  make(map[uint]*ContainerStats),
+		cache:  make(map[string]*ContainerStats),
 	}
 }
 
-func (s *StatsService) Get(serverID uint) *ContainerStats {
+func (s *StatsService) Get(serverID string) *ContainerStats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cache[serverID]
 }
 
-func (s *StatsService) Update(ctx context.Context, serverID uint, containerID string) error {
+func (s *StatsService) Update(ctx context.Context, serverID string, containerID string) error {
 	resp, err := s.docker.ContainerStats(ctx, containerID, client.ContainerStatsOptions{
 		Stream:                false,
 		IncludePreviousSample: true,
@@ -111,7 +111,7 @@ func (s *StatsService) Update(ctx context.Context, serverID uint, containerID st
 	return nil
 }
 
-func (s *StatsService) Remove(serverID uint) {
+func (s *StatsService) Remove(serverID string) {
 	s.mu.Lock()
 	delete(s.cache, serverID)
 	s.mu.Unlock()

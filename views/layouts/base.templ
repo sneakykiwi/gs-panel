@@ -1,0 +1,119 @@
+package layouts
+
+import "gs-panel/internal/models"
+
+templ Base(title string, user *models.User) {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>{ title } - GS Panel</title>
+		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg"/>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<script src="https://unpkg.com/htmx.org@2.0.0"></script>
+		<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+		<style>
+			[x-cloak] { display: none !important; }
+		</style>
+	</head>
+	<body class="bg-gray-900 text-gray-100 min-h-screen">
+		<div id="toast-container" class="fixed top-4 right-4 z-50 max-w-md"></div>
+		{ children... }
+		@Scripts()
+	</body>
+	</html>
+}
+
+templ Scripts() {
+	<script>
+		// Error handling
+		document.body.addEventListener('htmx:responseError', function(evt) {
+			const message = evt.detail.xhr.responseText || 'An error occurred';
+			showToast('error', message);
+		});
+		
+		// Success handling
+		document.body.addEventListener('htmx:afterSwap', function(evt) {
+			if (evt.detail.successful && evt.detail.xhr.status === 200) {
+				const successMsg = evt.detail.xhr.getResponseHeader('X-Success-Message');
+				if (successMsg) {
+					showToast('success', successMsg);
+				}
+			}
+		});
+		
+		// Global toast function
+		window.showToast = function(type, message) {
+			const container = document.getElementById('toast-container');
+			const icons = {
+				error: '✕',
+				success: '✓',
+				info: 'ℹ',
+				warning: '⚠'
+			};
+			const colors = {
+				error: 'bg-red-500/20 border-red-500 text-red-300',
+				success: 'bg-green-500/20 border-green-500 text-green-300',
+				info: 'bg-blue-500/20 border-blue-500 text-blue-300',
+				warning: 'bg-yellow-500/20 border-yellow-500 text-yellow-300'
+			};
+			
+			const toast = document.createElement('div');
+			toast.className = `${colors[type]} border px-4 py-3 rounded mb-2 flex items-center gap-2 animate-slide-in`;
+			toast.innerHTML = `<span class="font-bold">${icons[type]}</span><span>${message}</span>`;
+			container.appendChild(toast);
+			
+			// Auto-remove after 5 seconds
+			setTimeout(() => {
+				toast.classList.add('animate-slide-out');
+				setTimeout(() => toast.remove(), 300);
+			}, 5000);
+		};
+		
+		// Loading indicator
+		document.body.addEventListener('htmx:beforeRequest', function(evt) {
+			const element = evt.detail.elt;
+			if (element.hasAttribute('data-loading-text')) {
+				element.dataset.originalText = element.textContent;
+				element.textContent = element.dataset.loadingText;
+			}
+		});
+		
+		document.body.addEventListener('htmx:afterRequest', function(evt) {
+			const element = evt.detail.elt;
+			if (element.dataset.originalText) {
+				element.textContent = element.dataset.originalText;
+				delete element.dataset.originalText;
+			}
+		});
+	</script>
+	<style>
+		@keyframes slide-in {
+			from {
+				transform: translateX(100%);
+				opacity: 0;
+			}
+			to {
+				transform: translateX(0);
+				opacity: 1;
+			}
+		}
+		@keyframes slide-out {
+			from {
+				transform: translateX(0);
+				opacity: 1;
+			}
+			to {
+				transform: translateX(100%);
+				opacity: 0;
+			}
+		}
+		.animate-slide-in {
+			animation: slide-in 0.3s ease-out;
+		}
+		.animate-slide-out {
+			animation: slide-out 0.3s ease-in;
+		}
+	</style>
+}

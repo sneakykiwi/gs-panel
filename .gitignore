@@ -30,3 +30,7 @@ vendor/
 
 # Data directories
 data/
+
+# templ generated files
+*_templ.go
+tmp/
