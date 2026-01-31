@@ -49,8 +49,9 @@ jobs:
       id: version
       run: |
         VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+        SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
         if [[ "${{ github.ref }}" != refs/tags/* ]]; then
-          VERSION="0.0.1-dev-${{ github.sha_short }}"
+          VERSION="0.0.1-dev-${SHORT_SHA}"
         fi
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "GIT_COMMIT=${{ github.sha }}" >> $GITHUB_OUTPUT

@@ -15,9 +15,9 @@ ARG BUILD_TIME=unknown
 
 RUN CGO_ENABLED=1 GOOS=linux go build \
     -ldflags="-w -s \
-    -X gs-panel/internal/version.Version=${VERSION} \
-    -X gs-panel/internal/version.GitCommit=${GIT_COMMIT} \
-    -X gs-panel/internal/version.BuildTime=${BUILD_TIME}" \
+    -X gs-panel/internal/version.Version='${VERSION}' \
+    -X gs-panel/internal/version.GitCommit='${GIT_COMMIT}' \
+    -X gs-panel/internal/version.BuildTime='${BUILD_TIME}'" \
     -o gs-panel \
     cmd/server/main.go
 
