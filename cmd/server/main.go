@@ -14,6 +14,7 @@ import (
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/extractors"
 	"github.com/gofiber/fiber/v3/middleware/csrf"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/gofiber/template/html/v2"
@@ -94,6 +95,13 @@ func main() {
 		CookieSameSite: "Lax",
 		CookieSecure:   false,
 		CookieHTTPOnly: true,
+		Extractor:      extractors.FromHeader("X-Csrf-Token"),
+		Next: func(c fiber.Ctx) bool {
+			path := c.Path()
+			// Skip CSRF for login/setup pages and static assets
+			return path == "/login" || path == "/setup" || path == "/logout" ||
+				len(path) > 8 && path[:8] == "/static/"
+		},
 		ErrorHandler: func(c fiber.Ctx, err error) error {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error": "CSRF token validation failed",
