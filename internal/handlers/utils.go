@@ -76,3 +76,12 @@ func ValidatePassword(password string) error {
 	}
 	return nil
 }
+
+func GetCSRFToken(c fiber.Ctx) string {
+	return c.Cookies("csrf_")
+}
+
+func WithCSRF(data fiber.Map, c fiber.Ctx) fiber.Map {
+	data["CSRF"] = GetCSRFToken(c)
+	return data
+}
