@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+LICENSE
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+bin/
+dist/
+*.exe
+
+# Test files
+*_test.go
+*.test
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local data (don't include in build)
+data/
+servers/
+backups/
+logs/
+*.db
+
+# Dependencies (downloaded in build)
+vendor/
+
+# Node modules (if any)
+node_modules/
