@@ -2,12 +2,16 @@ FROM golang:1.25.6-alpine AS builder
 
 RUN apk add --no-cache git gcc musl-dev sqlite-dev
 
+RUN go install github.com/a-h/templ/cmd/templ@latest
+
 WORKDIR /build
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
+RUN templ generate
 
 ARG VERSION=0.0.1
 ARG GIT_COMMIT=unknown
