@@ -1,0 +1,28 @@
+package servers
+
+import (
+	"github.com/a-h/templ"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/views/components"
+	"github.com/sneakykiwi/gs-panel/views/layouts"
+)
+
+templ FileViewPage(user *models.User, server *models.Server, path string, content string, fileName string) {
+	@layouts.Base(fileName + " - " + server.Name, user) {
+		<div class="flex h-screen">
+			@components.Sidebar(user)
+			<main class="flex-1 p-8 overflow-auto">
+				<div class="mb-6">
+					<a href={ templ.SafeURL("/servers/" + server.ID + "/files?path=" + path) } class="text-gray-400 hover:text-white text-sm">← Back to Files</a>
+				</div>
+				<div class="flex justify-between items-center mb-4">
+					<h1 class="text-2xl font-bold">{ fileName }</h1>
+					<div class="text-sm text-gray-400">{ server.Name }</div>
+				</div>
+				<div class="bg-gray-800 rounded-lg border border-gray-700 p-4 overflow-auto">
+					<pre class="text-sm text-gray-300 font-mono whitespace-pre-wrap break-all">{ content }</pre>
+				</div>
+			</main>
+		</div>
+	}
+}
