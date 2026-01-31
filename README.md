@@ -30,14 +30,14 @@ docker run -d \
   -p 8080:8080 \
   -v gs-panel-data:/data \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/yourusername/gs-panel:latest
+  ghcr.io/sneakykiwi/gs-panel:latest
 ```
 
 ### Binary
 
 ```bash
 # Download binary
-wget https://github.com/yourusername/gs-panel/releases/latest/download/gs-panel-linux-amd64
+wget https://github.com/sneakykiwi/gs-panel/releases/latest/download/gs-panel-linux-amd64
 chmod +x gs-panel-linux-amd64
 
 # Run
@@ -224,21 +224,6 @@ storage:
 - [ ] Mobile-friendly UI improvements
 - [ ] Additional game templates
 
-## Contributing
-
-Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
-
 ## License
 
-MIT License - see [LICENSE](LICENSE) file.
-
-## Support
-
-- GitHub Issues: [Report bugs](https://github.com/yourusername/gs-panel/issues)
-- Discussions: [Ask questions](https://github.com/yourusername/gs-panel/discussions)
-
----
-
-**Made with ❤️ by gamers, for gamers.**
-
-No bloated dashboards. No complex setups. Just game servers that work.
+MIT License
