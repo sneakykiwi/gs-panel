@@ -1,9 +1,9 @@
 package validators
 
 import (
-	"gs-panel/internal/forms"
-	"gs-panel/internal/models"
-	"gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/internal/forms"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/services"
 )
 
 type ServerUpdateValidator struct {

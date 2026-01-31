@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"errors"
-	"gs-panel/internal/config"
-	"gs-panel/internal/models"
-	"gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/internal/config"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/services"
 	"path/filepath"
 
 	"github.com/gofiber/fiber/v3"

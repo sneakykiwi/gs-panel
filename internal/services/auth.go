@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/models"
 
 	"gorm.io/gorm"
 )

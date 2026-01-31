@@ -1,4 +1,4 @@
-module gs-panel
+module github.com/sneakykiwi/gs-panel
 
 go 1.25.6
 

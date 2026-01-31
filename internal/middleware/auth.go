@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	"gs-panel/internal/models"
-	"gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/services"
 
 	"github.com/gofiber/fiber/v3"
 )

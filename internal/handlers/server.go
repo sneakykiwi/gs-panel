@@ -1,13 +1,13 @@
 package handlers
 
 import (
-	"gs-panel/internal/forms"
-	"gs-panel/internal/middleware"
-	"gs-panel/internal/models"
-	"gs-panel/internal/services"
-	"gs-panel/internal/validators"
-	"gs-panel/views/pages/servers"
-	"gs-panel/views/partials"
+	"github.com/sneakykiwi/gs-panel/internal/forms"
+	"github.com/sneakykiwi/gs-panel/internal/middleware"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/internal/validators"
+	"github.com/sneakykiwi/gs-panel/views/pages/servers"
+	"github.com/sneakykiwi/gs-panel/views/partials"
 
 	"github.com/gofiber/fiber/v3"
 )

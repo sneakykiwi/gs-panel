@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"gs-panel/internal/middleware"
-	"gs-panel/internal/models"
-	"gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/internal/middleware"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/services"
 
 	"github.com/gofiber/contrib/v3/websocket"
 )

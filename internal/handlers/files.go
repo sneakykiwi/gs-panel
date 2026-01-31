@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"gs-panel/internal/config"
-	"gs-panel/internal/forms"
-	"gs-panel/internal/middleware"
-	"gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/internal/config"
+	"github.com/sneakykiwi/gs-panel/internal/forms"
+	"github.com/sneakykiwi/gs-panel/internal/middleware"
+	"github.com/sneakykiwi/gs-panel/internal/services"
 
 	"github.com/gofiber/fiber/v3"
 )

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"gs-panel/internal/logger"
+	"github.com/sneakykiwi/gs-panel/internal/logger"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"

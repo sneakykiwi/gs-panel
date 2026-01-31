@@ -3,7 +3,7 @@ package middleware
 import (
 	"time"
 
-	"gs-panel/internal/logger"
+	"github.com/sneakykiwi/gs-panel/internal/logger"
 
 	"github.com/gofiber/fiber/v3"
 )

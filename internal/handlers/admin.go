@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"gs-panel/internal/forms"
-	"gs-panel/internal/middleware"
-	"gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/internal/forms"
+	"github.com/sneakykiwi/gs-panel/internal/middleware"
+	"github.com/sneakykiwi/gs-panel/internal/services"
 
 	"github.com/gofiber/fiber/v3"
 )

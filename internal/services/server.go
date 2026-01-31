@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"gs-panel/internal/config"
-	"gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/config"
+	"github.com/sneakykiwi/gs-panel/internal/models"
 
 	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/container"

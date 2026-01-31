@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"gs-panel/internal/logger"
-	"gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/logger"
+	"github.com/sneakykiwi/gs-panel/internal/models"
 
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
