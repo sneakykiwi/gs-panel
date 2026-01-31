@@ -122,6 +122,23 @@ func (s *AuthService) HasAdminUser() bool {
 	return count > 0
 }
 
+func (s *AuthService) ResetPassword(userID, newPassword string) error {
+	var user models.User
+	if err := s.db.First(&user, "id = ?", userID).Error; err != nil {
+		return err
+	}
+
+	if err := user.SetPassword(newPassword); err != nil {
+		return err
+	}
+
+	if err := s.db.Save(&user).Error; err != nil {
+		return err
+	}
+
+	return s.db.Where("user_id = ?", userID).Delete(&models.Session{}).Error
+}
+
 func generateToken(length int) (string, error) {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {

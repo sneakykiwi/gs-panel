@@ -68,7 +68,17 @@
                             {{end}}
                         </td>
                         <td class="p-4 text-gray-400">{{.ModTime}}</td>
-                        <td class="p-4 text-right">
+                        <td class="p-4 text-right space-x-2">
+                            {{if not .IsDir}}
+                            <a href="/servers/{{$.Server.ID}}/files/download?path={{.Path}}"
+                               class="text-blue-400 hover:text-blue-300 text-sm">
+                                Download
+                            </a>
+                            {{end}}
+                            <button onclick="showRenameModal('{{.Path}}', '{{.Name}}')"
+                                    class="text-green-400 hover:text-green-300 text-sm">
+                                Rename
+                            </button>
                             <button hx-delete="/servers/{{$.Server.ID}}/files?path={{.Path}}"
                                     hx-confirm="Delete {{.Name}}?"
                                     hx-swap="none"
@@ -133,3 +143,34 @@
         </form>
     </div>
 </div>
+
+<div id="rename-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+        <h2 class="text-xl font-bold mb-4">Rename</h2>
+        <form hx-post="/servers/{{.Server.ID}}/files/rename" hx-swap="none" hx-on::after-request="location.reload()">
+            <input type="hidden" name="old_path" id="rename-old-path">
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">New Name</label>
+                <input type="text" name="new_name" id="rename-new-name" required
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500">
+            </div>
+            <div class="flex gap-4">
+                <button type="submit" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded transition">
+                    Rename
+                </button>
+                <button type="button" onclick="document.getElementById('rename-modal').classList.add('hidden')"
+                    class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded transition">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function showRenameModal(path, currentName) {
+    document.getElementById('rename-old-path').value = path;
+    document.getElementById('rename-new-name').value = currentName;
+    document.getElementById('rename-modal').classList.remove('hidden');
+}
+</script>

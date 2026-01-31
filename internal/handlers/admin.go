@@ -37,38 +37,27 @@ func (h *AdminHandler) CreateUserPage(c fiber.Ctx) error {
 }
 
 func (h *AdminHandler) CreateUser(c fiber.Ctx) error {
+	user := middleware.GetUser(c)
 	var form forms.CreateUser
 	if err := c.Bind().Form(&form); err != nil {
-		return c.Render("admin/user_create", fiber.Map{
-			"Title": "Create User",
-			"User":  middleware.GetUser(c),
-			"Error": "Invalid form data",
-		})
+		return RenderError(c, "admin/user_create", "Create User", user, "Invalid form data")
 	}
 
-	if len(form.Password) < 8 {
-		return c.Render("admin/user_create", fiber.Map{
-			"Title": "Create User",
-			"User":  middleware.GetUser(c),
-			"Error": "Password must be at least 8 characters",
-		})
+	if err := ValidatePassword(form.Password); err != nil {
+		return RenderError(c, "admin/user_create", "Create User", user, err.Error())
 	}
 
 	if _, err := h.authService.CreateUser(form.Email, form.Password, form.IsAdmin == "on"); err != nil {
-		return c.Render("admin/user_create", fiber.Map{
-			"Title": "Create User",
-			"User":  middleware.GetUser(c),
-			"Error": "Failed to create user: " + err.Error(),
-		})
+		return RenderError(c, "admin/user_create", "Create User", user, "Failed to create user: "+err.Error())
 	}
 
 	return c.Redirect().To("/admin/users")
 }
 
 func (h *AdminHandler) DeleteUser(c fiber.Ctx) error {
-	id := c.Params("id")
-	if id == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
+	id, err := GetUserID(c)
+	if err != nil {
+		return err
 	}
 
 	if currentUser := middleware.GetUser(c); currentUser != nil && currentUser.ID == id {
@@ -82,9 +71,9 @@ func (h *AdminHandler) DeleteUser(c fiber.Ctx) error {
 }
 
 func (h *AdminHandler) UserServersPage(c fiber.Ctx) error {
-	id := c.Params("id")
-	if id == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
+	id, err := GetUserID(c)
+	if err != nil {
+		return err
 	}
 
 	targetUser, err := h.authService.GetUserByID(id)
@@ -117,9 +106,9 @@ func (h *AdminHandler) UserServersPage(c fiber.Ctx) error {
 }
 
 func (h *AdminHandler) AssignServer(c fiber.Ctx) error {
-	userID := c.Params("id")
-	if userID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
+	userID, err := GetUserID(c)
+	if err != nil {
+		return err
 	}
 
 	var form forms.AssignServer
@@ -134,9 +123,9 @@ func (h *AdminHandler) AssignServer(c fiber.Ctx) error {
 }
 
 func (h *AdminHandler) UnassignServer(c fiber.Ctx) error {
-	userID := c.Params("id")
-	if userID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
+	userID, err := GetUserID(c)
+	if err != nil {
+		return err
 	}
 
 	serverID := c.Params("serverId")
@@ -147,5 +136,27 @@ func (h *AdminHandler) UnassignServer(c fiber.Ctx) error {
 	if err := h.serverService.UnassignUser(serverID, userID); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to unassign server: "+err.Error())
 	}
+	return c.SendStatus(fiber.StatusOK)
+}
+
+func (h *AdminHandler) ResetPassword(c fiber.Ctx) error {
+	userID, err := GetUserID(c)
+	if err != nil {
+		return err
+	}
+
+	var form forms.ResetPassword
+	if err := c.Bind().Form(&form); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid form data")
+	}
+
+	if err := ValidatePassword(form.NewPassword); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+
+	if err := h.authService.ResetPassword(userID, form.NewPassword); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to reset password: "+err.Error())
+	}
+
 	return c.SendStatus(fiber.StatusOK)
 }

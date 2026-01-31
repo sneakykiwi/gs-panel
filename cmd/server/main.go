@@ -14,6 +14,7 @@ import (
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/csrf"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/gofiber/template/html/v2"
 	"github.com/moby/moby/client"
@@ -51,9 +52,6 @@ func main() {
 	statsService := services.NewStatsService(dockerClient)
 	streamHandler := handlers.NewStreamHandler(serverService, consoleService, statsService)
 
-	_ = consoleService
-	_ = statsService
-
 	schedulerService.LoadSchedules()
 	serverService.SyncAllStatuses()
 
@@ -88,7 +86,20 @@ func main() {
 	})
 
 	app.Use(middleware.Logger())
+	app.Use(middleware.GlobalLimiter())
 	app.Use("/static", static.New(staticPath))
+
+	app.Use(csrf.New(csrf.Config{
+		CookieName:     "csrf_",
+		CookieSameSite: "Lax",
+		CookieSecure:   false,
+		CookieHTTPOnly: true,
+		ErrorHandler: func(c fiber.Ctx, err error) error {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "CSRF token validation failed",
+			})
+		},
+	}))
 
 	authHandler := handlers.NewAuthHandler(authService)
 	serverHandler := handlers.NewServerHandler(serverService, templateService)
@@ -97,7 +108,7 @@ func main() {
 	filesHandler := handlers.NewFilesHandler(serverService, cfg)
 
 	app.Get("/login", authHandler.LoginPage)
-	app.Post("/login", authHandler.Login)
+	app.Post("/login", middleware.LoginLimiter(), authHandler.Login)
 	app.Get("/logout", authHandler.Logout)
 	app.Get("/setup", authHandler.SetupPage)
 	app.Post("/setup", authHandler.Setup)
@@ -116,7 +127,7 @@ func main() {
 	protected.Get("/servers/:id/status-badge", serverHandler.StatusBadge)
 	protected.Get("/servers/:id/controls", serverHandler.Controls)
 	protected.Get("/servers/:id/backups", backupHandler.List)
-	protected.Post("/servers/:id/backups", backupHandler.Create)
+	protected.Post("/servers/:id/backups", middleware.BackupLimiter(), backupHandler.Create)
 	protected.Get("/servers/:id/backups/progress", backupHandler.Progress)
 	protected.Delete("/backups/:backupId", backupHandler.Delete)
 	protected.Post("/backups/:backupId/restore", backupHandler.Restore)
@@ -124,18 +135,20 @@ func main() {
 	protected.Get("/backups/:backupId/download", backupHandler.Download)
 	protected.Get("/servers/:id/files", filesHandler.List)
 	protected.Get("/servers/:id/files/view", filesHandler.View)
+	protected.Get("/servers/:id/files/download", filesHandler.Download)
 	protected.Post("/servers/:id/files/save", filesHandler.Save)
 	protected.Post("/servers/:id/files/upload", filesHandler.Upload)
 	protected.Post("/servers/:id/files/mkdir", filesHandler.CreateDir)
+	protected.Post("/servers/:id/files/rename", filesHandler.Rename)
+	protected.Post("/servers/:id/files/move", filesHandler.Move)
 	protected.Delete("/servers/:id/files", filesHandler.Delete)
 	protected.Get("/servers/:id/schedules", backupHandler.ListSchedules)
 	protected.Post("/servers/:id/schedules", backupHandler.CreateSchedule)
 	protected.Delete("/schedules/:scheduleId", backupHandler.DeleteSchedule)
 	protected.Post("/schedules/:scheduleId/toggle", backupHandler.ToggleSchedule)
 
-	protected.Get("/servers/:id/ws", func(c fiber.Ctx) error {
+	protected.Get("/servers/:id/ws", middleware.CommandLimiter(), func(c fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
-			// Store user in websocket-friendly way
 			user := middleware.GetUser(c)
 			c.Locals(middleware.UserContextKey, user)
 			return c.Next()
@@ -149,6 +162,7 @@ func main() {
 	admin.Get("/admin/users/new", adminHandler.CreateUserPage)
 	admin.Post("/admin/users", adminHandler.CreateUser)
 	admin.Delete("/admin/users/:id", adminHandler.DeleteUser)
+	admin.Post("/admin/users/:id/reset-password", adminHandler.ResetPassword)
 	admin.Get("/admin/users/:id/servers", adminHandler.UserServersPage)
 	admin.Post("/admin/users/:id/servers", adminHandler.AssignServer)
 	admin.Delete("/admin/users/:id/servers/:serverId", adminHandler.UnassignServer)

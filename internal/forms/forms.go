@@ -63,3 +63,18 @@ type UpdateServer struct {
 	MemoryLimit int    `form:"memory_limit"`
 	Port        int    `form:"port"`
 }
+
+type RenameFile struct {
+	OldPath string `form:"old_path"`
+	NewName string `form:"new_name"`
+}
+
+type MoveFile struct {
+	SourcePath string `form:"source_path"`
+	DestPath   string `form:"dest_path"`
+}
+
+type ResetPassword struct {
+	UserID      string `form:"user_id"`
+	NewPassword string `form:"new_password"`
+}

@@ -33,11 +33,7 @@ func NewFilesHandler(serverService *services.ServerService, cfg *config.Config) 
 }
 
 func (h *FilesHandler) getServerPath(serverID string) (string, error) {
-	server, err := h.serverService.Get(serverID)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(h.cfg.Storage.Servers, server.ID), nil
+	return GetServerPathByID(h.serverService, h.cfg, serverID)
 }
 
 func (h *FilesHandler) validatePath(serverPath, relativePath string) (string, error) {
@@ -49,14 +45,9 @@ func (h *FilesHandler) validatePath(serverPath, relativePath string) (string, er
 }
 
 func (h *FilesHandler) List(c fiber.Ctx) error {
-	serverID := c.Params("id")
-	if serverID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
-	}
-
-	server, err := h.serverService.Get(serverID)
+	server, err := GetServerWithAuth(c, h.serverService)
 	if err != nil {
-		return fiber.NewError(fiber.StatusNotFound, "Server not found")
+		return err
 	}
 
 	relativePath := filepath.Clean(c.Query("path", "/"))
@@ -113,14 +104,9 @@ func (h *FilesHandler) List(c fiber.Ctx) error {
 }
 
 func (h *FilesHandler) View(c fiber.Ctx) error {
-	serverID := c.Params("id")
-	if serverID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
-	}
-
-	server, err := h.serverService.Get(serverID)
+	server, err := GetServerWithAuth(c, h.serverService)
 	if err != nil {
-		return fiber.NewError(fiber.StatusNotFound, "Server not found")
+		return err
 	}
 
 	relativePath := c.Query("path", "")
@@ -154,9 +140,9 @@ func (h *FilesHandler) View(c fiber.Ctx) error {
 }
 
 func (h *FilesHandler) Save(c fiber.Ctx) error {
-	serverID := c.Params("id")
-	if serverID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
+	serverID, err := GetServerID(c)
+	if err != nil {
+		return err
 	}
 
 	serverPath, err := h.getServerPath(serverID)
@@ -181,9 +167,9 @@ func (h *FilesHandler) Save(c fiber.Ctx) error {
 }
 
 func (h *FilesHandler) Upload(c fiber.Ctx) error {
-	serverID := c.Params("id")
-	if serverID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
+	serverID, err := GetServerID(c)
+	if err != nil {
+		return err
 	}
 
 	serverPath, err := h.getServerPath(serverID)
@@ -231,9 +217,9 @@ func (h *FilesHandler) Upload(c fiber.Ctx) error {
 }
 
 func (h *FilesHandler) Delete(c fiber.Ctx) error {
-	serverID := c.Params("id")
-	if serverID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
+	serverID, err := GetServerID(c)
+	if err != nil {
+		return err
 	}
 
 	serverPath, err := h.getServerPath(serverID)
@@ -258,9 +244,9 @@ func (h *FilesHandler) Delete(c fiber.Ctx) error {
 }
 
 func (h *FilesHandler) CreateDir(c fiber.Ctx) error {
-	serverID := c.Params("id")
-	if serverID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid server ID")
+	serverID, err := GetServerID(c)
+	if err != nil {
+		return err
 	}
 
 	serverPath, err := h.getServerPath(serverID)
@@ -289,4 +275,122 @@ func (h *FilesHandler) CreateDir(c fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create folder: "+err.Error())
 	}
 	return c.Redirect().To("/servers/" + serverID + "/files?path=" + form.Path)
+}
+
+func (h *FilesHandler) Download(c fiber.Ctx) error {
+	serverID, err := GetServerID(c)
+	if err != nil {
+		return err
+	}
+
+	relativePath := c.Query("path", "")
+	if relativePath == "" || relativePath == "/" {
+		return fiber.NewError(fiber.StatusBadRequest, "Cannot download root directory")
+	}
+
+	serverPath, err := h.getServerPath(serverID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "Server not found")
+	}
+
+	fullPath, err := h.validatePath(serverPath, relativePath)
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "File not found")
+	}
+
+	if info.IsDir() {
+		return fiber.NewError(fiber.StatusBadRequest, "Cannot download directories")
+	}
+
+	return c.Download(fullPath, filepath.Base(relativePath))
+}
+
+func (h *FilesHandler) Rename(c fiber.Ctx) error {
+	serverID, err := GetServerID(c)
+	if err != nil {
+		return err
+	}
+
+	serverPath, err := h.getServerPath(serverID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "Server not found")
+	}
+
+	var form forms.RenameFile
+	if err := c.Bind().Form(&form); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid form data")
+	}
+
+	if form.OldPath == "" || form.NewName == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Path and new name are required")
+	}
+
+	if form.OldPath == "/" {
+		return fiber.NewError(fiber.StatusBadRequest, "Cannot rename root directory")
+	}
+
+	oldFullPath, err := h.validatePath(serverPath, form.OldPath)
+	if err != nil {
+		return err
+	}
+
+	newPath := filepath.Join(filepath.Dir(form.OldPath), form.NewName)
+	newFullPath, err := h.validatePath(serverPath, newPath)
+	if err != nil {
+		return err
+	}
+
+	if err := os.Rename(oldFullPath, newFullPath); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to rename: "+err.Error())
+	}
+
+	return c.SendStatus(fiber.StatusOK)
+}
+
+func (h *FilesHandler) Move(c fiber.Ctx) error {
+	serverID, err := GetServerID(c)
+	if err != nil {
+		return err
+	}
+
+	serverPath, err := h.getServerPath(serverID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "Server not found")
+	}
+
+	var form forms.MoveFile
+	if err := c.Bind().Form(&form); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid form data")
+	}
+
+	if form.SourcePath == "" || form.DestPath == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Source and destination paths are required")
+	}
+
+	if form.SourcePath == "/" {
+		return fiber.NewError(fiber.StatusBadRequest, "Cannot move root directory")
+	}
+
+	sourceFullPath, err := h.validatePath(serverPath, form.SourcePath)
+	if err != nil {
+		return err
+	}
+
+	destDir, err := h.validatePath(serverPath, form.DestPath)
+	if err != nil {
+		return err
+	}
+
+	destFullPath := filepath.Join(destDir, filepath.Base(form.SourcePath))
+
+	if err := os.Rename(sourceFullPath, destFullPath); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to move: "+err.Error())
+	}
+
+	return c.SendStatus(fiber.StatusOK)
 }

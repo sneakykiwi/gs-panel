@@ -67,19 +67,19 @@ func (h *AuthHandler) Setup(c fiber.Ctx) error {
 
 	var form forms.Setup
 	if err := c.Bind().Form(&form); err != nil {
-		return c.Render("setup", fiber.Map{"Title": "Initial Setup", "Error": "Invalid form data"})
+		return RenderError(c, "setup", "Initial Setup", nil, "Invalid form data")
 	}
 
 	if form.Password != form.ConfirmPassword {
-		return c.Render("setup", fiber.Map{"Title": "Initial Setup", "Error": "Passwords do not match"})
+		return RenderError(c, "setup", "Initial Setup", nil, "Passwords do not match")
 	}
 
-	if len(form.Password) < 8 {
-		return c.Render("setup", fiber.Map{"Title": "Initial Setup", "Error": "Password must be at least 8 characters"})
+	if err := ValidatePassword(form.Password); err != nil {
+		return RenderError(c, "setup", "Initial Setup", nil, err.Error())
 	}
 
 	if _, err := h.authService.CreateUser(form.Email, form.Password, true); err != nil {
-		return c.Render("setup", fiber.Map{"Title": "Initial Setup", "Error": "Failed to create admin user: " + err.Error()})
+		return RenderError(c, "setup", "Initial Setup", nil, "Failed to create admin user: "+err.Error())
 	}
 
 	return c.Redirect().To("/login")
