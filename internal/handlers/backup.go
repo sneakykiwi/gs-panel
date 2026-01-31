@@ -6,8 +6,8 @@ import (
 	"github.com/sneakykiwi/gs-panel/internal/middleware"
 	"github.com/sneakykiwi/gs-panel/internal/models"
 	"github.com/sneakykiwi/gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/views/pages/servers"
 	"github.com/sneakykiwi/gs-panel/views/partials"
-	"path/filepath"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -122,12 +122,7 @@ func (h *BackupHandler) ListSchedules(c fiber.Ctx) error {
 	}
 
 	server, _ := h.serverService.Get(serverID)
-	return c.Render("servers/schedules", fiber.Map{
-		"Title":     "Backup Schedules",
-		"User":      middleware.GetUser(c),
-		"Server":    server,
-		"Schedules": schedules,
-	})
+	return Render(c, servers.SchedulesPage(middleware.GetUser(c), server, schedules))
 }
 
 func (h *BackupHandler) CreateSchedule(c fiber.Ctx) error {
