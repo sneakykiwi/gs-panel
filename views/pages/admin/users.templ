@@ -40,7 +40,6 @@ templ UsersPage(user *models.User, users []models.User) {
 		</div>
 
 		@ResetPasswordModal()
-		@UsersScript()
 	}
 }
 
@@ -97,18 +96,6 @@ templ ResetPasswordModal() {
 	</div>
 }
 
-templ UsersScript() {
-	<script>
-	function showResetPasswordModal(userId, userEmail) {
-		const form = document.getElementById('reset-password-form');
-		form.setAttribute('hx-post', '/admin/users/' + userId + '/reset-password');
-		document.getElementById('reset-user-id').value = userId;
-		document.getElementById('reset-user-email').textContent = userEmail;
-		document.getElementById('reset-password-modal').classList.remove('hidden');
-		htmx.process(form);
-	}
-	</script>
-}
 
 script showResetPasswordModal(userId string, userEmail string) {
 	const form = document.getElementById('reset-password-form');
