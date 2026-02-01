@@ -1,0 +1,78 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/views/components"
+	"github.com/sneakykiwi/gs-panel/views/layouts"
+)
+
+templ DashboardPage(user *models.User, servers []models.Server) {
+	@layouts.Base("Dashboard", user) {
+		<div class="flex h-screen">
+			@components.Sidebar(user)
+
+			<main class="flex-1 p-8 overflow-auto">
+				<div class="flex justify-between items-center mb-8">
+					<h1 class="text-3xl font-bold">Game Servers</h1>
+					if user.IsAdmin {
+						<a href="/servers/new" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition">
+							+ New Server
+						</a>
+					}
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="server-list">
+					if len(servers) > 0 {
+						for _, server := range servers {
+							@ServerCard(&server)
+						}
+					} else {
+						<div class="col-span-full text-center py-12 text-gray-400">
+							<p class="text-xl mb-4">No servers yet</p>
+							if user.IsAdmin {
+								<a href="/servers/new" class="text-blue-400 hover:underline">Create your first server</a>
+							}
+						</div>
+					}
+				</div>
+			</main>
+		</div>
+	}
+}
+
+templ ServerCard(server *models.Server) {
+	<div class="bg-gray-800 rounded-lg border border-gray-700 p-6 hover:border-gray-600 transition">
+		<div class="flex justify-between items-start mb-4">
+			<div>
+				<h3 class="text-xl font-semibold">{ server.Name }</h3>
+				<p class="text-gray-400 text-sm">{ server.GameType }</p>
+			</div>
+			@StatusBadge(server.Status)
+		</div>
+		<div class="text-sm text-gray-400 mb-4">
+			<p>Port: { formatPort(server.Port) }</p>
+		</div>
+		<a href={ templ.SafeURL("/servers/" + server.ID) }
+			class="block text-center bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition">
+			Manage
+		</a>
+	</div>
+}
+
+templ StatusBadge(status models.ServerStatus) {
+	switch status {
+		case models.ServerStatusRunning:
+			<span class="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs">Running</span>
+		case models.ServerStatusStopped:
+			<span class="px-2 py-1 bg-gray-500/20 text-gray-400 rounded text-xs">Stopped</span>
+		case models.ServerStatusStarting:
+			<span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded text-xs">Starting</span>
+		default:
+			<span class="px-2 py-1 bg-gray-500/20 text-gray-400 rounded text-xs">{ string(status) }</span>
+	}
+}
+
+func formatPort(port int) string {
+	return fmt.Sprintf("%d", port)
+}

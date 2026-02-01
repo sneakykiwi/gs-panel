@@ -1,0 +1,120 @@
+package admin
+
+import (
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/views/components"
+	"github.com/sneakykiwi/gs-panel/views/layouts"
+)
+
+templ UsersPage(user *models.User, users []models.User) {
+	@layouts.Base("User Management", user) {
+		<div class="flex h-screen">
+			@components.Sidebar(user)
+
+			<main class="flex-1 p-8 overflow-auto">
+				<div class="flex justify-between items-center mb-8">
+					<h1 class="text-3xl font-bold">User Management</h1>
+					<a href="/admin/users/new" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition">
+						+ New User
+					</a>
+				</div>
+
+				<div class="bg-gray-800 rounded-lg border border-gray-700">
+					<table class="w-full">
+						<thead>
+							<tr class="border-b border-gray-700">
+								<th class="text-left p-4 font-medium text-gray-400">Email</th>
+								<th class="text-left p-4 font-medium text-gray-400">Role</th>
+								<th class="text-left p-4 font-medium text-gray-400">Created</th>
+								<th class="text-right p-4 font-medium text-gray-400">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, u := range users {
+								@UserRow(&u)
+							}
+						</tbody>
+					</table>
+				</div>
+			</main>
+		</div>
+
+		@ResetPasswordModal()
+		@UsersScript()
+	}
+}
+
+templ UserRow(u *models.User) {
+	<tr class="border-b border-gray-700 last:border-0" id={ "user-" + u.ID }>
+		<td class="p-4">{ u.Email }</td>
+		<td class="p-4">
+			if u.IsAdmin {
+				<span class="px-2 py-1 bg-purple-500/20 text-purple-400 rounded text-xs">Admin</span>
+			} else {
+				<span class="px-2 py-1 bg-gray-500/20 text-gray-400 rounded text-xs">User</span>
+			}
+		</td>
+		<td class="p-4 text-gray-400">{ u.CreatedAt.Format("Jan 02, 2006") }</td>
+		<td class="p-4 text-right space-x-3">
+			<a href={ templ.SafeURL("/admin/users/" + u.ID + "/servers") } class="text-blue-400 hover:text-blue-300">Servers</a>
+			<button onclick={ showResetPasswordModal(u.ID, u.Email) }
+				class="text-yellow-400 hover:text-yellow-300">Reset Password</button>
+			if !u.IsAdmin {
+				<button hx-delete={ "/admin/users/" + u.ID }
+					hx-confirm="Delete this user?"
+					hx-target={ "#user-" + u.ID }
+					hx-swap="outerHTML"
+					class="text-red-400 hover:text-red-300">Delete</button>
+			}
+		</td>
+	</tr>
+}
+
+templ ResetPasswordModal() {
+	<div id="reset-password-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+		<div class="bg-gray-800 rounded-lg p-6 w-full max-w-md">
+			<h2 class="text-xl font-bold mb-4">Reset Password</h2>
+			<p class="text-gray-400 mb-4">Reset password for: <span id="reset-user-email" class="text-white font-medium"></span></p>
+			<form id="reset-password-form" hx-swap="none" hx-on::after-request="location.reload()">
+				<input type="hidden" name="user_id" id="reset-user-id"/>
+				<div class="mb-4">
+					<label class="block text-sm font-medium mb-2">New Password</label>
+					<input type="password" name="new_password" required minlength="8"
+						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"/>
+					<p class="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
+				</div>
+				<div class="flex gap-4">
+					<button type="submit" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-2 rounded transition">
+						Reset Password
+					</button>
+					<button type="button" onclick="document.getElementById('reset-password-modal').classList.add('hidden')"
+						class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded transition">
+						Cancel
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+}
+
+templ UsersScript() {
+	<script>
+	function showResetPasswordModal(userId, userEmail) {
+		const form = document.getElementById('reset-password-form');
+		form.setAttribute('hx-post', '/admin/users/' + userId + '/reset-password');
+		document.getElementById('reset-user-id').value = userId;
+		document.getElementById('reset-user-email').textContent = userEmail;
+		document.getElementById('reset-password-modal').classList.remove('hidden');
+		htmx.process(form);
+	}
+	</script>
+}
+
+script showResetPasswordModal(userId string, userEmail string) {
+	const form = document.getElementById('reset-password-form');
+	form.setAttribute('hx-post', '/admin/users/' + userId + '/reset-password');
+	document.getElementById('reset-user-id').value = userId;
+	document.getElementById('reset-user-email').textContent = userEmail;
+	document.getElementById('reset-password-modal').classList.remove('hidden');
+	htmx.process(form);
+}

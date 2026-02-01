@@ -2,8 +2,13 @@
 
 # Version info
 VERSION ?= 0.0.1
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+ifeq ($(OS),Windows_NT)
+    BUILD_TIME := $(shell powershell -Command "Get-Date -u -Format 'yyyy-MM-ddTHH:mm:ssZ'")
+    GIT_COMMIT := $(shell powershell -Command "try { git rev-parse --short HEAD } catch { 'unknown' }")
+else
+    BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+    GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+endif
 
 # Build flags
 LDFLAGS := -ldflags "-w -s \
@@ -12,13 +17,13 @@ LDFLAGS := -ldflags "-w -s \
 	-X gs-panel/internal/version.BuildTime=$(BUILD_TIME)"
 
 # Default target
-build:
+build: templ
 	@echo "Building GS Panel v$(VERSION)..."
 	go build $(LDFLAGS) -o bin/server cmd/server/main.go
 	@echo "Build complete: bin/server"
 
 # Development build (no version injection)
-build-dev:
+build-dev: templ
 	@echo "Building (dev mode)..."
 	go build -o bin/server cmd/server/main.go
 
@@ -67,6 +72,8 @@ lint:
 # Generate templ files
 templ:
 	templ generate
+
+dev: templ run-dev
 
 # Full release build for all platforms
 release:

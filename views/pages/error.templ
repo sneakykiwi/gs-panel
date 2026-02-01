@@ -1,0 +1,32 @@
+package pages
+
+import "fmt"
+
+templ ErrorPage(code int, message string) {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>Error - GS Panel</title>
+		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg"/>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-gray-900 text-gray-100 min-h-screen">
+		<div class="min-h-screen flex items-center justify-center">
+			<div class="bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-md text-center">
+				<div class="text-6xl font-bold text-red-500 mb-4">{ formatCode(code) }</div>
+				<h1 class="text-2xl font-bold mb-4">Something went wrong</h1>
+				<p class="text-gray-400 mb-6">{ message }</p>
+				<a href="/" class="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded transition">
+					Go to Dashboard
+				</a>
+			</div>
+		</div>
+	</body>
+	</html>
+}
+
+func formatCode(code int) string {
+	return fmt.Sprintf("%d", code)
+}

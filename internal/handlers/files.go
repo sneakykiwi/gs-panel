@@ -10,18 +10,12 @@ import (
 	"github.com/sneakykiwi/gs-panel/internal/config"
 	"github.com/sneakykiwi/gs-panel/internal/forms"
 	"github.com/sneakykiwi/gs-panel/internal/middleware"
+	"github.com/sneakykiwi/gs-panel/internal/models"
 	"github.com/sneakykiwi/gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/views/pages/servers"
 
 	"github.com/gofiber/fiber/v3"
 )
-
-type FileInfo struct {
-	Name    string
-	Path    string
-	IsDir   bool
-	Size    int64
-	ModTime string
-}
 
 type FilesHandler struct {
 	serverService *services.ServerService
@@ -66,13 +60,13 @@ func (h *FilesHandler) List(c fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Directory not found")
 	}
 
-	var files []FileInfo
+	var files []models.FileInfo
 	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
-		files = append(files, FileInfo{
+		files = append(files, models.FileInfo{
 			Name:    entry.Name(),
 			Path:    filepath.Join(relativePath, entry.Name()),
 			IsDir:   entry.IsDir(),
@@ -93,14 +87,8 @@ func (h *FilesHandler) List(c fiber.Ctx) error {
 		parentPath = filepath.Dir(relativePath)
 	}
 
-	return c.Render("servers/files", fiber.Map{
-		"Title":      "Files - " + server.Name,
-		"User":       middleware.GetUser(c),
-		"Server":     server,
-		"Files":      files,
-		"Path":       relativePath,
-		"ParentPath": parentPath,
-	})
+	user := middleware.GetUser(c)
+	return Render(c, servers.FilesPage(user, server, files, relativePath, parentPath))
 }
 
 func (h *FilesHandler) View(c fiber.Ctx) error {
@@ -129,14 +117,8 @@ func (h *FilesHandler) View(c fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusRequestEntityTooLarge, "File too large to view (max 1MB)")
 	}
 
-	return c.Render("servers/file_view", fiber.Map{
-		"Title":    filepath.Base(relativePath) + " - " + server.Name,
-		"User":     middleware.GetUser(c),
-		"Server":   server,
-		"Path":     relativePath,
-		"Content":  string(content),
-		"FileName": filepath.Base(relativePath),
-	})
+	user := middleware.GetUser(c)
+	return Render(c, servers.FileViewPage(user, server, relativePath, filepath.Base(relativePath), string(content)))
 }
 
 func (h *FilesHandler) Save(c fiber.Ctx) error {

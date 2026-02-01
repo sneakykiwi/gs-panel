@@ -1,0 +1,58 @@
+package auth
+
+templ LoginPage(errorMsg string) {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>Login - GS Panel</title>
+		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg"/>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-gray-900 text-gray-100 min-h-screen">
+		<div class="min-h-screen flex items-center justify-center">
+			<div class="bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-md">
+				<div class="flex justify-center mb-6">
+					<svg class="w-16 h-16" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+						<rect x="4" y="4" width="56" height="56" rx="12" fill="url(#login-grad)"/>
+						<path d="M20 20h8v8h-8zM36 20h8v8h-8zM20 36h8v8h-8zM36 36h8v8h-8z" fill="#fff" opacity="0.9"/>
+						<defs>
+							<linearGradient id="login-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+								<stop offset="0%" style="stop-color:#3b82f6"/>
+								<stop offset="100%" style="stop-color:#8b5cf6"/>
+							</linearGradient>
+						</defs>
+					</svg>
+				</div>
+				<h1 class="text-2xl font-bold text-center mb-6">GS Panel</h1>
+
+				if errorMsg != "" {
+					<div class="bg-red-500/20 border border-red-500 text-red-300 px-4 py-3 rounded mb-4">
+						{ errorMsg }
+					</div>
+				}
+
+				<form method="POST" action="/login">
+					<div class="mb-4">
+						<label class="block text-sm font-medium mb-2" for="email">Email</label>
+						<input type="email" id="email" name="email" required
+							class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"/>
+					</div>
+
+					<div class="mb-6">
+						<label class="block text-sm font-medium mb-2" for="password">Password</label>
+						<input type="password" id="password" name="password" required
+							class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"/>
+					</div>
+
+					<button type="submit"
+						class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition">
+						Login
+					</button>
+				</form>
+			</div>
+		</div>
+	</body>
+	</html>
+}
