@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sneakykiwi/gs-panel/internal/config"
+	"github.com/sneakykiwi/gs-panel/internal/logger"
 	"github.com/sneakykiwi/gs-panel/internal/models"
 
 	"github.com/google/uuid"
@@ -32,15 +34,17 @@ type ServerService struct {
 	cfg            *config.Config
 	templates      *TemplateService
 	consoleService *ConsoleService
+	logService     *LogService
 }
 
-func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, templates *TemplateService, consoleService *ConsoleService) *ServerService {
+func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, templates *TemplateService, consoleService *ConsoleService, logService *LogService) *ServerService {
 	return &ServerService{
 		db:             db,
 		docker:         docker,
 		cfg:            cfg,
 		templates:      templates,
 		consoleService: consoleService,
+		logService:     logService,
 	}
 }
 
@@ -191,7 +195,14 @@ func (s *ServerService) Stop(id string) error {
 		s.consoleService.StopSession(server.ID)
 	}
 
+	// Save container logs before stopping
 	ctx := context.Background()
+	if s.logService != nil && server.ContainerID != "" {
+		if err := s.logService.SaveContainerLogs(ctx, server.ID, server.Name, server.ContainerID, time.Now()); err != nil {
+			logger.Error().Str("server_id", server.ID).Err(err).Msg("Failed to save container logs")
+		}
+	}
+
 	timeout := 30
 	_, err = s.docker.ContainerStop(ctx, server.ContainerID, client.ContainerStopOptions{Timeout: &timeout})
 	if err != nil {

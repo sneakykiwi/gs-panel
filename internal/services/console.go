@@ -15,7 +15,6 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// ConsoleSession maintains a persistent attach connection to a container
 type ConsoleSession struct {
 	serverID    string
 	containerID string
@@ -37,7 +36,6 @@ type ConsoleSession struct {
 	onStatus func(string)
 }
 
-// NewConsoleSession creates a new console session
 func NewConsoleSession(serverID, containerID string, docker *client.Client, onOutput func(string), onStatus func(string)) *ConsoleSession {
 	return &ConsoleSession{
 		serverID:    serverID,
@@ -49,12 +47,10 @@ func NewConsoleSession(serverID, containerID string, docker *client.Client, onOu
 	}
 }
 
-// Start begins the session with infinite reconnection
 func (s *ConsoleSession) Start(ctx context.Context) {
 	go s.run(ctx)
 }
 
-// run is the main loop that handles attachment and reconnection
 func (s *ConsoleSession) run(ctx context.Context) {
 	defer func() {
 		s.mu.Lock()
@@ -74,7 +70,6 @@ func (s *ConsoleSession) run(ctx context.Context) {
 		default:
 		}
 
-		// Check if container is running before attempting attach
 		inspect, err := s.docker.ContainerInspect(ctx, s.containerID, client.ContainerInspectOptions{})
 		if err != nil {
 			logger.Error().Str("server_id", s.serverID).Err(err).Msg("Failed to inspect container")
@@ -84,7 +79,6 @@ func (s *ConsoleSession) run(ctx context.Context) {
 		}
 
 		if !inspect.Container.State.Running {
-			// Container exists but is not running
 			s.mu.Lock()
 			wasAttached := s.attached
 			s.attached = false
@@ -100,7 +94,6 @@ func (s *ConsoleSession) run(ctx context.Context) {
 			continue
 		}
 
-		// Container is running, try to attach
 		s.onStatus("connecting")
 		if err := s.attach(ctx); err != nil {
 			logger.Error().Str("server_id", s.serverID).Err(err).Msg("Failed to attach to container")
@@ -109,20 +102,17 @@ func (s *ConsoleSession) run(ctx context.Context) {
 			continue
 		}
 
-		// Successfully attached
 		s.mu.Lock()
 		s.attached = true
 		s.reconnectCount = 0
 		s.mu.Unlock()
 
-		backoff = time.Second // Reset backoff on successful connection
+		backoff = time.Second
 		s.onStatus("connected")
 		logger.Info().Str("server_id", s.serverID).Str("container_id", s.containerID).Msg("Console attached to container")
 
-		// Stream until disconnected
 		s.stream(ctx)
 
-		// Connection lost
 		s.mu.Lock()
 		s.attached = false
 		if s.conn != nil {
@@ -136,17 +126,14 @@ func (s *ConsoleSession) run(ctx context.Context) {
 	}
 }
 
-// attach establishes the ContainerAttach connection
 func (s *ConsoleSession) attach(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Clean up any existing connection
 	if s.conn != nil {
 		s.conn.Close()
 	}
 
-	// Check if container uses TTY
 	inspect, err := s.docker.ContainerInspect(ctx, s.containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return err
@@ -158,7 +145,7 @@ func (s *ConsoleSession) attach(ctx context.Context) error {
 		Stdin:  true,
 		Stdout: true,
 		Stderr: true,
-		Logs:   false, // Only new logs, not historical
+		Logs:   false,
 	})
 	if err != nil {
 		return fmt.Errorf("container attach failed: %w", err)
@@ -172,16 +159,13 @@ func (s *ConsoleSession) attach(ctx context.Context) error {
 	if usesTTY {
 		s.writer = resp.Conn
 	} else {
-		// For non-TTY, we need to handle stdin differently
-		// The Docker attach protocol for non-TTY is more complex
-		// For now, we'll use the connection directly
+		//TODO implement attach protocol for non-TTY
 		s.writer = resp.Conn
 	}
 
 	return nil
 }
 
-// stream reads output from the container and broadcasts it
 func (s *ConsoleSession) stream(ctx context.Context) {
 	s.mu.RLock()
 	reader := s.reader
@@ -191,7 +175,6 @@ func (s *ConsoleSession) stream(ctx context.Context) {
 		return
 	}
 
-	// Read bytes directly for minimal latency (no line buffering)
 	buf := make([]byte, 4096)
 	var lineBuf strings.Builder
 
@@ -213,7 +196,6 @@ func (s *ConsoleSession) stream(ctx context.Context) {
 		}
 
 		if n > 0 {
-			// Process the bytes, preserving partial lines in buffer
 			data := string(buf[:n])
 			for _, ch := range data {
 				if ch == '\n' || ch == '\r' {
@@ -230,7 +212,6 @@ func (s *ConsoleSession) stream(ctx context.Context) {
 	}
 }
 
-// WriteCommand writes a command directly to the container's stdin
 func (s *ConsoleSession) WriteCommand(command string) error {
 	s.mu.RLock()
 	attached := s.attached
@@ -246,7 +227,6 @@ func (s *ConsoleSession) WriteCommand(command string) error {
 		return fmt.Errorf("command is empty")
 	}
 
-	// Add newline since we're writing to TTY stdin
 	cmdBytes := []byte(command + "\n")
 
 	_, err := writer.Write(cmdBytes)
@@ -257,14 +237,12 @@ func (s *ConsoleSession) WriteCommand(command string) error {
 	return nil
 }
 
-// IsAttached returns whether the session is currently attached
 func (s *ConsoleSession) IsAttached() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.attached
 }
 
-// Stop gracefully stops the session
 func (s *ConsoleSession) Stop() {
 	close(s.stopChan)
 
@@ -275,18 +253,15 @@ func (s *ConsoleSession) Stop() {
 	s.mu.Unlock()
 }
 
-// sleepWithBackoff sleeps with exponential backoff
 func (s *ConsoleSession) sleepWithBackoff(backoff *time.Duration, maxBackoff time.Duration) {
 	time.Sleep(*backoff)
 
-	// Increase backoff for next time (exponential, capped at max)
 	*backoff = *backoff * 2
 	if *backoff > maxBackoff {
 		*backoff = maxBackoff
 	}
 }
 
-// ConsoleService manages console sessions and subscriptions
 type ConsoleService struct {
 	docker *client.Client
 
@@ -295,7 +270,6 @@ type ConsoleService struct {
 	mu          sync.RWMutex
 }
 
-// NewConsoleService creates a new console service
 func NewConsoleService(docker *client.Client) *ConsoleService {
 	return &ConsoleService{
 		docker:      docker,
@@ -304,7 +278,6 @@ func NewConsoleService(docker *client.Client) *ConsoleService {
 	}
 }
 
-// Subscribe adds a subscriber for a server's console output
 func (s *ConsoleService) Subscribe(serverID string) chan string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -315,7 +288,6 @@ func (s *ConsoleService) Subscribe(serverID string) chan string {
 	return ch
 }
 
-// Unsubscribe removes a subscriber
 func (s *ConsoleService) Unsubscribe(serverID string, ch chan string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -330,7 +302,6 @@ func (s *ConsoleService) Unsubscribe(serverID string, ch chan string) {
 		}
 	}
 
-	// Clean up session if no more subscribers
 	if len(s.connections[key]) == 0 {
 		delete(s.connections, key)
 		if session, ok := s.sessions[key]; ok {
@@ -340,31 +311,25 @@ func (s *ConsoleService) Unsubscribe(serverID string, ch chan string) {
 	}
 }
 
-// EnsureSession creates or returns an existing console session for a server
 func (s *ConsoleService) EnsureSession(serverID, containerID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	key := StreamKey(serverID)
 
-	// Check if session already exists
 	if session, ok := s.sessions[key]; ok {
-		// Update container ID if it changed (rare, but possible)
 		if session.containerID != containerID {
 			session.Stop()
 			delete(s.sessions, key)
 		} else {
-			// Session already exists with correct container ID
 			return
 		}
 	}
 
-	// Only create session if there are subscribers
 	if len(s.connections[key]) == 0 {
 		return
 	}
 
-	// Create new session
 	onOutput := func(line string) {
 		s.Broadcast(serverID, line)
 	}
@@ -376,12 +341,10 @@ func (s *ConsoleService) EnsureSession(serverID, containerID string) {
 	session := NewConsoleSession(serverID, containerID, s.docker, onOutput, onStatus)
 	s.sessions[key] = session
 
-	// Start the session
 	ctx := context.Background()
 	session.Start(ctx)
 }
 
-// StopSession stops a console session (called when server stops)
 func (s *ConsoleService) StopSession(serverID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -393,7 +356,6 @@ func (s *ConsoleService) StopSession(serverID string) {
 	}
 }
 
-// SendCommand sends a command to the server's console (direct stdin)
 func (s *ConsoleService) SendCommand(serverID string, command string) error {
 	s.mu.RLock()
 	session, exists := s.sessions[StreamKey(serverID)]
@@ -410,7 +372,6 @@ func (s *ConsoleService) SendCommand(serverID string, command string) error {
 	return session.WriteCommand(command)
 }
 
-// Broadcast sends a message to all subscribers
 func (s *ConsoleService) Broadcast(serverID string, message string) {
 	logger.Info().Str("server_id", serverID).Str("log", message).Msg("console")
 
@@ -422,12 +383,11 @@ func (s *ConsoleService) Broadcast(serverID string, message string) {
 		select {
 		case ch <- message:
 		default:
-			// Channel is full, skip this message
+			// channel full, skip message
 		}
 	}
 }
 
-// BroadcastStatus sends a status message to all subscribers
 func (s *ConsoleService) BroadcastStatus(serverID string, status string) {
 	logger.Info().Str("server_id", serverID).Str("status", status).Msg("console status")
 
@@ -441,4 +401,36 @@ func (s *ConsoleService) BroadcastStatus(serverID string, status string) {
 		default:
 		}
 	}
+}
+
+// FetchHistoricalLogs retrieves historical logs from a running container
+func (s *ConsoleService) FetchHistoricalLogs(ctx context.Context, containerID string, lines int) ([]string, error) {
+	// Fetch logs with tail to get last N lines
+	reader, err := s.docker.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       fmt.Sprintf("%d", lines),
+		Timestamps: false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch container logs: %w", err)
+	}
+	defer reader.Close()
+
+	// Read and split by lines
+	var logs []string
+	scanner := bufio.NewScanner(reader)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		line := strings.TrimRight(scanner.Text(), "\r\n")
+		logs = append(logs, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read container logs: %w", err)
+	}
+
+	return logs, nil
 }

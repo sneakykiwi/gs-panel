@@ -55,7 +55,8 @@ func main() {
 	templateService := services.NewTemplateService()
 	authService := services.NewAuthService(db)
 	consoleService := services.NewConsoleService(dockerClient)
-	serverService := services.NewServerService(db, dockerClient, cfg, templateService, consoleService)
+	logService := services.NewLogService(cfg.Storage.Servers, dockerClient)
+	serverService := services.NewServerService(db, dockerClient, cfg, templateService, consoleService, logService)
 	backupService := services.NewBackupService(db, cfg)
 	schedulerService := services.NewSchedulerService(db, backupService)
 	statsService := services.NewStatsService(dockerClient)
@@ -122,6 +123,7 @@ func main() {
 	backupHandler := handlers.NewBackupHandler(backupService, serverService, schedulerService, cfg)
 	adminHandler := handlers.NewAdminHandler(authService, serverService)
 	filesHandler := handlers.NewFilesHandler(serverService, cfg)
+	logHandler := handlers.NewLogHandler(serverService, logService)
 
 	app.Get("/version", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -154,6 +156,7 @@ func main() {
 	protected.Get("/servers/:id/backups", backupHandler.List)
 	protected.Post("/servers/:id/backups", middleware.BackupLimiter(), backupHandler.Create)
 	protected.Get("/servers/:id/backups/progress", backupHandler.Progress)
+	logHandler.RegisterRoutes(app)
 	protected.Delete("/backups/:backupId", backupHandler.Delete)
 	protected.Post("/backups/:backupId/restore", backupHandler.Restore)
 	protected.Get("/backups/:backupId/verify", backupHandler.Verify)

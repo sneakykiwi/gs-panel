@@ -100,16 +100,24 @@ func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
 	ch := h.consoleService.Subscribe(server.ID)
 	defer h.consoleService.Unsubscribe(server.ID, ch)
 
-	// Ensure console session exists if container is available
-	if server.ContainerID != "" {
-		h.consoleService.EnsureSession(server.ID, server.ContainerID)
-	}
-
 	var writeMu sync.Mutex
 	writeJSON := func(msg wsOutMessage) {
 		writeMu.Lock()
 		defer writeMu.Unlock()
 		_ = c.WriteJSON(msg)
+	}
+
+	// Fetch and send historical logs if container is running
+	if server.ContainerID != "" {
+		// Send historical logs first (last 100 lines)
+		ctx := context.Background()
+		historicalLogs, _ := h.consoleService.FetchHistoricalLogs(ctx, server.ContainerID, 100)
+		for _, log := range historicalLogs {
+			writeJSON(wsOutMessage{Type: "log", Data: log + "\n"})
+		}
+
+		// Then start live streaming
+		h.consoleService.EnsureSession(server.ID, server.ContainerID)
 	}
 
 	writeJSON(wsOutMessage{Type: "log", Data: fmt.Sprintf("Connected to %s\n", server.Name)})
@@ -122,7 +130,6 @@ func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Console message handler - dedicated goroutine for low latency
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -134,7 +141,6 @@ func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
 				if !ok {
 					return
 				}
-				// Check if this is a status message
 				if strings.HasPrefix(msg, "[status]") {
 					status := strings.TrimPrefix(msg, "[status]")
 					writeJSON(wsOutMessage{Type: "status", Data: status})
@@ -145,7 +151,6 @@ func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
 		}
 	}()
 
-	// Keepalive handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

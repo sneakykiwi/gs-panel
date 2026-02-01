@@ -107,7 +107,7 @@
             <!-- STATS -->
             <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
                 <h2 class="text-xl font-bold mb-4">Stats</h2>
-
+ 
                 <div class="grid grid-cols-2 gap-4 text-sm text-gray-300">
                     <div class="bg-gray-900 rounded p-4">
                         <div class="text-gray-400">CPU</div>
@@ -125,6 +125,14 @@
                         <div class="text-gray-400">Net TX</div>
                         <div id="tx-value" class="text-xl font-bold">—</div>
                     </div>
+                </div>
+            </div>
+
+            <!-- SAVED LOGS -->
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h2 class="text-xl font-bold mb-4">Saved Logs</h2>
+                <div id="logs-list" hx-get="/servers/{{.Server.ID}}/logs" hx-trigger="load" hx-swap="innerHTML">
+                    <div class="text-gray-400 text-sm">Loading logs...</div>
                 </div>
             </div>
         </div>
