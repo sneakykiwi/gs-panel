@@ -2,10 +2,11 @@ package handlers
 
 import (
 	"errors"
+	"path/filepath"
+
 	"github.com/sneakykiwi/gs-panel/internal/config"
 	"github.com/sneakykiwi/gs-panel/internal/models"
 	"github.com/sneakykiwi/gs-panel/internal/services"
-	"path/filepath"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -54,20 +55,6 @@ func GetServerPathByID(serverService *services.ServerService, cfg *config.Config
 		return "", err
 	}
 	return filepath.Join(cfg.Storage.Servers, server.ID), nil
-}
-
-func RenderError(c fiber.Ctx, template string, title string, user *models.User, errMsg string, data ...fiber.Map) error {
-	renderData := fiber.Map{
-		"Title": title,
-		"User":  user,
-		"Error": errMsg,
-	}
-	if len(data) > 0 {
-		for k, v := range data[0] {
-			renderData[k] = v
-		}
-	}
-	return c.Render(template, renderData)
 }
 
 func ValidatePassword(password string) error {

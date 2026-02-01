@@ -17,7 +17,6 @@ import (
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/static"
-	"github.com/gofiber/template/html/v2"
 	"github.com/moby/moby/client"
 )
 
@@ -66,32 +65,10 @@ func main() {
 	serverService.SyncAllStatuses()
 
 	rootDir := findRootDir()
-	templatesPath := filepath.Join(rootDir, "web", "templates")
 	staticPath := filepath.Join(rootDir, "web", "static")
-
-	engine := html.New(templatesPath, ".html")
-	engine.AddFunc("eq", func(a, b interface{}) bool {
-		return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
-	})
-	engine.AddFunc("divf", func(a, b int64) float64 {
-		return float64(a) / float64(b)
-	})
-	engine.AddFunc("dirname", func(path string) string {
-		return filepath.Dir(path)
-	})
-	engine.AddFunc("dict", func(values ...interface{}) map[string]interface{} {
-		dict := make(map[string]interface{})
-		for i := 0; i < len(values); i += 2 {
-			key, _ := values[i].(string)
-			dict[key] = values[i+1]
-		}
-		return dict
-	})
 
 	app := fiber.New(fiber.Config{
 		AppName:      "GS Panel",
-		Views:        engine,
-		ViewsLayout:  "layouts/base",
 		ErrorHandler: middleware.ErrorHandler(),
 	})
 

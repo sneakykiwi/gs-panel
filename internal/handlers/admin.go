@@ -4,6 +4,7 @@ import (
 	"github.com/sneakykiwi/gs-panel/internal/forms"
 	"github.com/sneakykiwi/gs-panel/internal/middleware"
 	"github.com/sneakykiwi/gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/views/pages/admin"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -22,33 +23,26 @@ func (h *AdminHandler) UsersPage(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.Render("admin/users", fiber.Map{
-		"Title": "User Management",
-		"User":  middleware.GetUser(c),
-		"Users": users,
-	})
+	return Render(c, admin.UsersPage(middleware.GetUser(c), users))
 }
 
 func (h *AdminHandler) CreateUserPage(c fiber.Ctx) error {
-	return c.Render("admin/user_create", fiber.Map{
-		"Title": "Create User",
-		"User":  middleware.GetUser(c),
-	})
+	return Render(c, admin.UserCreatePage(middleware.GetUser(c), ""))
 }
 
 func (h *AdminHandler) CreateUser(c fiber.Ctx) error {
 	user := middleware.GetUser(c)
 	var form forms.CreateUser
 	if err := c.Bind().Form(&form); err != nil {
-		return RenderError(c, "admin/user_create", "Create User", user, "Invalid form data")
+		return Render(c, admin.UserCreatePage(user, "Invalid form data"))
 	}
 
 	if err := ValidatePassword(form.Password); err != nil {
-		return RenderError(c, "admin/user_create", "Create User", user, err.Error())
+		return Render(c, admin.UserCreatePage(user, err.Error()))
 	}
 
 	if _, err := h.authService.CreateUser(form.Email, form.Password, form.IsAdmin == "on"); err != nil {
-		return RenderError(c, "admin/user_create", "Create User", user, "Failed to create user: "+err.Error())
+		return Render(c, admin.UserCreatePage(user, "Failed to create user: "+err.Error()))
 	}
 
 	return c.Redirect().To("/admin/users")
@@ -96,13 +90,7 @@ func (h *AdminHandler) UserServersPage(c fiber.Ctx) error {
 		userServerIDs[s.ID] = true
 	}
 
-	return c.Render("admin/user_servers", fiber.Map{
-		"Title":         "Manage User Servers",
-		"User":          middleware.GetUser(c),
-		"TargetUser":    targetUser,
-		"AllServers":    allServers,
-		"UserServerIDs": userServerIDs,
-	})
+	return Render(c, admin.UserServersPage(middleware.GetUser(c), targetUser, allServers, userServerIDs))
 }
 
 func (h *AdminHandler) AssignServer(c fiber.Ctx) error {

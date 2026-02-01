@@ -1,0 +1,88 @@
+package servers
+
+import (
+	"path/filepath"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/views/components"
+	"github.com/sneakykiwi/gs-panel/views/layouts"
+)
+
+templ FileViewPage(user *models.User, server *models.Server, path string, fileName string, content string) {
+	@layouts.Base(fileName, user) {
+		<div class="flex h-screen">
+			@components.Sidebar(user)
+
+			<main class="flex-1 p-8 overflow-auto">
+				<div class="mb-6">
+					<a href={ templ.SafeURL("/servers/" + server.ID + "/files?path=" + filepath.Dir(path)) } class="text-gray-400 hover:text-white text-sm">&larr; Back to Files</a>
+				</div>
+
+				<div class="flex justify-between items-center mb-6">
+					<div>
+						<h1 class="text-2xl font-bold">{ fileName }</h1>
+						<p class="text-gray-400 font-mono text-sm">{ path }</p>
+					</div>
+					<button id="save-btn" onclick="saveFile()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition">
+						Save Changes
+					</button>
+				</div>
+
+				<div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+					<textarea id="file-content"
+						class="w-full h-[600px] bg-gray-900 text-gray-100 font-mono text-sm p-4 rounded border border-gray-700 focus:outline-none focus:border-blue-500 resize-none"
+						spellcheck="false">{ content }</textarea>
+				</div>
+			</main>
+		</div>
+
+		@FileViewScript(server.ID, path)
+	}
+}
+
+templ FileViewScript(serverID string, path string) {
+	<div id="file-data" data-server-id={ serverID } data-path={ path }></div>
+	<script>
+	function saveFile() {
+		const btn = document.getElementById('save-btn');
+		const content = document.getElementById('file-content').value;
+		const data = document.getElementById('file-data');
+		const serverID = data.dataset.serverId;
+		const path = data.dataset.path;
+
+		btn.disabled = true;
+		btn.textContent = 'Saving...';
+
+		fetch('/servers/' + serverID + '/files/save', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+			body: 'path=' + encodeURIComponent(path) + '&content=' + encodeURIComponent(content)
+		})
+		.then(response => {
+			if (response.ok) {
+				btn.textContent = 'Saved!';
+				setTimeout(() => { btn.textContent = 'Save Changes'; btn.disabled = false; }, 2000);
+			} else {
+				throw new Error('Save failed');
+			}
+		})
+		.catch(err => {
+			btn.textContent = 'Error!';
+			btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+			btn.classList.add('bg-red-600', 'hover:bg-red-700');
+			setTimeout(() => {
+				btn.textContent = 'Save Changes';
+				btn.disabled = false;
+				btn.classList.remove('bg-red-600', 'hover:bg-red-700');
+				btn.classList.add('bg-green-600', 'hover:bg-green-700');
+			}, 2000);
+		});
+	}
+
+	document.getElementById('file-content').addEventListener('keydown', function(e) {
+		if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+			e.preventDefault();
+			saveFile();
+		}
+	});
+	</script>
+}
