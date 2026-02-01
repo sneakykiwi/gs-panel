@@ -27,18 +27,20 @@ var (
 )
 
 type ServerService struct {
-	db        *gorm.DB
-	docker    *client.Client
-	cfg       *config.Config
-	templates *TemplateService
+	db             *gorm.DB
+	docker         *client.Client
+	cfg            *config.Config
+	templates      *TemplateService
+	consoleService *ConsoleService
 }
 
-func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, templates *TemplateService) *ServerService {
+func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, templates *TemplateService, consoleService *ConsoleService) *ServerService {
 	return &ServerService{
-		db:        db,
-		docker:    docker,
-		cfg:       cfg,
-		templates: templates,
+		db:             db,
+		docker:         docker,
+		cfg:            cfg,
+		templates:      templates,
+		consoleService: consoleService,
 	}
 }
 
@@ -162,7 +164,16 @@ func (s *ServerService) Start(id string) error {
 	}
 
 	server.Status = models.ServerStatusRunning
-	return s.db.Save(server).Error
+	if err := s.db.Save(server).Error; err != nil {
+		return err
+	}
+
+	// Notify console service to start session
+	if s.consoleService != nil {
+		s.consoleService.EnsureSession(server.ID, server.ContainerID)
+	}
+
+	return nil
 }
 
 func (s *ServerService) Stop(id string) error {
@@ -173,6 +184,11 @@ func (s *ServerService) Stop(id string) error {
 
 	if server.ContainerID == "" {
 		return nil
+	}
+
+	// Notify console service that server is stopping
+	if s.consoleService != nil {
+		s.consoleService.StopSession(server.ID)
 	}
 
 	ctx := context.Background()

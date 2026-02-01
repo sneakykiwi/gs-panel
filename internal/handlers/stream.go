@@ -100,8 +100,9 @@ func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
 	ch := h.consoleService.Subscribe(server.ID)
 	defer h.consoleService.Unsubscribe(server.ID, ch)
 
+	// Ensure console session exists if container is available
 	if server.ContainerID != "" {
-		h.consoleService.StartLogStream(server.ID, server.ContainerID)
+		h.consoleService.EnsureSession(server.ID, server.ContainerID)
 	}
 
 	var writeMu sync.Mutex
@@ -113,27 +114,63 @@ func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
 
 	writeJSON(wsOutMessage{Type: "log", Data: fmt.Sprintf("Connected to %s\n", server.Name)})
 	if server.ContainerID == "" {
-		writeJSON(wsOutMessage{Type: "log", Data: "Server has no container yet.\n"})
+		writeJSON(wsOutMessage{Type: "status", Data: "waiting"})
+		writeJSON(wsOutMessage{Type: "log", Data: "Server is not running. Start the server to see console output.\n"})
 	}
 
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Console message handler - dedicated goroutine for low latency
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				// Check if this is a status message
+				if strings.HasPrefix(msg, "[status]") {
+					status := strings.TrimPrefix(msg, "[status]")
+					writeJSON(wsOutMessage{Type: "status", Data: status})
+				} else {
+					writeJSON(wsOutMessage{Type: "log", Data: msg + "\n"})
+				}
+			}
+		}
+	}()
+
+	// Keepalive handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		keepalive := time.NewTicker(10 * time.Second)
 		defer keepalive.Stop()
-		statsTicker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
-		defer statsTicker.Stop()
-
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-keepalive.C:
 				writeJSON(wsOutMessage{Type: "ping", Data: "pong"})
+			}
+		}
+	}()
+
+	// Stats handler - separate goroutine so slow Docker API calls don't block console
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		statsTicker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
+		defer statsTicker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
 			case <-statsTicker.C:
 				var payload statsPayload
 				if server.ContainerID == "" {
@@ -162,11 +199,6 @@ func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
 					}
 				}
 				writeJSON(wsOutMessage{Type: "stats", Data: payload})
-			case msg, ok := <-ch:
-				if !ok {
-					return
-				}
-				writeJSON(wsOutMessage{Type: "log", Data: msg + "\n"})
 			}
 		}
 	}()
@@ -187,16 +219,14 @@ func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
 		if cmd == "" {
 			continue
 		}
-		h.consoleService.Broadcast(server.ID, "> "+cmd+"\n")
-		if server.ContainerID == "" {
-			writeJSON(wsOutMessage{Type: "log", Data: "[error] Server container not created. Start the server first.\n"})
-			continue
+
+		// Echo the command locally
+		h.consoleService.Broadcast(server.ID, "> "+cmd)
+
+		// Try to send command (will fail if server not running)
+		if err := h.consoleService.SendCommand(server.ID, cmd); err != nil {
+			writeJSON(wsOutMessage{Type: "log", Data: "[error] " + err.Error() + "\n"})
 		}
-		cmdCtx, cmdCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := h.consoleService.SendCommand(cmdCtx, server.ID, server.ContainerID, cmd); err != nil {
-			h.consoleService.Broadcast(server.ID, "[error] "+err.Error()+"\n")
-		}
-		cmdCancel()
 	}
 
 	wg.Wait()
