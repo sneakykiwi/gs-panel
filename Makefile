@@ -3,7 +3,7 @@
 # Version info
 VERSION ?= 0.0.1
 ifeq ($(OS),Windows_NT)
-    BUILD_TIME := $(shell powershell -Command "Get-Date -u -Format 'yyyy-MM-ddTHH:mm:ssZ'")
+	BUILD_TIME := $(shell powershell -Command "Get-Date -UFormat '%Y-%m-%dT%H:%M:%SZ'")
     GIT_COMMIT := $(shell powershell -Command "try { git rev-parse --short HEAD } catch { 'unknown' }")
 else
     BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
