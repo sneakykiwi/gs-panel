@@ -136,6 +136,11 @@ func (s *LogService) ReadLogFile(serverID, filename string) (string, error) {
 		return "", fmt.Errorf("invalid log filename")
 	}
 
+	// Prevent path traversal by ensuring filename contains no directory separators
+	if filename != filepath.Base(filename) {
+		return "", fmt.Errorf("invalid log filename: path traversal not allowed")
+	}
+
 	filePath := filepath.Join(s.getLogsDir(serverID), filename)
 
 	content, err := os.ReadFile(filePath)
@@ -152,6 +157,11 @@ func (s *LogService) ReadLogFile(serverID, filename string) (string, error) {
 func (s *LogService) GetLogFilePath(serverID, filename string) (string, error) {
 	if !strings.HasSuffix(filename, ".log") {
 		return "", fmt.Errorf("invalid log filename")
+	}
+
+	// Prevent path traversal by ensuring filename contains no directory separators
+	if filename != filepath.Base(filename) {
+		return "", fmt.Errorf("invalid log filename: path traversal not allowed")
 	}
 
 	filePath := filepath.Join(s.getLogsDir(serverID), filename)
