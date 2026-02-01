@@ -2,7 +2,9 @@ package services
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -155,7 +157,6 @@ func (s *ConsoleSession) attach(ctx context.Context) error {
 	s.reader = resp.Reader
 
 	// If TTY is enabled, we can write directly to the connection
-	// Otherwise we need to handle the multiplexed stream
 	if usesTTY {
 		s.writer = resp.Conn
 	} else {
@@ -169,28 +170,51 @@ func (s *ConsoleSession) attach(ctx context.Context) error {
 func (s *ConsoleSession) stream(ctx context.Context) {
 	s.mu.RLock()
 	reader := s.reader
+	conn := s.conn
 	s.mu.RUnlock()
 
-	if reader == nil {
+	if reader == nil || conn == nil {
 		return
 	}
 
 	buf := make([]byte, 4096)
 	var lineBuf strings.Builder
 
+	const readTimeout = 2 * time.Second
+
 	for {
 		select {
 		case <-ctx.Done():
+			if line := strings.TrimRight(lineBuf.String(), "\r\n"); line != "" {
+				s.onOutput(line)
+			}
 			return
 		case <-s.stopChan:
+			if line := strings.TrimRight(lineBuf.String(), "\r\n"); line != "" {
+				s.onOutput(line)
+			}
 			return
 		default:
 		}
 
+		if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			logger.Error().Str("server_id", s.serverID).Err(err).Msg("Failed to set read deadline")
+			if line := strings.TrimRight(lineBuf.String(), "\r\n"); line != "" {
+				s.onOutput(line)
+			}
+			return
+		}
+
 		n, err := reader.Read(buf)
 		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				continue
+			}
 			if err != io.EOF {
 				logger.Error().Str("server_id", s.serverID).Err(err).Msg("Console stream read error")
+			}
+			if line := strings.TrimRight(lineBuf.String(), "\r\n"); line != "" {
+				s.onOutput(line)
 			}
 			return
 		}
@@ -265,14 +289,20 @@ func (s *ConsoleSession) sleepWithBackoff(backoff *time.Duration, maxBackoff tim
 type ConsoleService struct {
 	docker *client.Client
 
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	sessions    map[StreamKey]*ConsoleSession
 	connections map[StreamKey][]chan string
 	mu          sync.RWMutex
 }
 
 func NewConsoleService(docker *client.Client) *ConsoleService {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &ConsoleService{
 		docker:      docker,
+		ctx:         ctx,
+		cancel:      cancel,
 		sessions:    make(map[StreamKey]*ConsoleSession),
 		connections: make(map[StreamKey][]chan string),
 	}
@@ -313,7 +343,6 @@ func (s *ConsoleService) Unsubscribe(serverID string, ch chan string) {
 
 func (s *ConsoleService) EnsureSession(serverID, containerID string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	key := StreamKey(serverID)
 
@@ -322,11 +351,13 @@ func (s *ConsoleService) EnsureSession(serverID, containerID string) {
 			session.Stop()
 			delete(s.sessions, key)
 		} else {
+			s.mu.Unlock()
 			return
 		}
 	}
 
 	if len(s.connections[key]) == 0 {
+		s.mu.Unlock()
 		return
 	}
 
@@ -341,8 +372,9 @@ func (s *ConsoleService) EnsureSession(serverID, containerID string) {
 	session := NewConsoleSession(serverID, containerID, s.docker, onOutput, onStatus)
 	s.sessions[key] = session
 
-	ctx := context.Background()
-	session.Start(ctx)
+	s.mu.Unlock()
+
+	session.Start(s.ctx)
 }
 
 func (s *ConsoleService) StopSession(serverID string) {
@@ -353,6 +385,25 @@ func (s *ConsoleService) StopSession(serverID string) {
 	if session, ok := s.sessions[key]; ok {
 		session.Stop()
 		delete(s.sessions, key)
+	}
+}
+
+func (s *ConsoleService) Shutdown() {
+	s.cancel()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, session := range s.sessions {
+		session.Stop()
+		delete(s.sessions, key)
+	}
+
+	for key, channels := range s.connections {
+		for _, ch := range channels {
+			close(ch)
+		}
+		delete(s.connections, key)
 	}
 }
 
@@ -403,9 +454,13 @@ func (s *ConsoleService) BroadcastStatus(serverID string, status string) {
 	}
 }
 
-// FetchHistoricalLogs retrieves historical logs from a running container
 func (s *ConsoleService) FetchHistoricalLogs(ctx context.Context, containerID string, lines int) ([]string, error) {
-	// Fetch logs with tail to get last N lines
+	inspect, err := s.docker.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect container: %w", err)
+	}
+	usesTTY := inspect.Container.Config.Tty
+
 	reader, err := s.docker.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -417,9 +472,19 @@ func (s *ConsoleService) FetchHistoricalLogs(ctx context.Context, containerID st
 	}
 	defer reader.Close()
 
-	// Read and split by lines
+	var logData io.Reader
+	if usesTTY {
+		logData = reader
+	} else {
+		demuxed, err := demultiplexDockerStream(reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to demultiplex container logs: %w", err)
+		}
+		logData = bytes.NewReader(demuxed)
+	}
+
 	var logs []string
-	scanner := bufio.NewScanner(reader)
+	scanner := bufio.NewScanner(logData)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
@@ -433,4 +498,34 @@ func (s *ConsoleService) FetchHistoricalLogs(ctx context.Context, containerID st
 	}
 
 	return logs, nil
+}
+
+func demultiplexDockerStream(reader io.Reader) ([]byte, error) {
+	var result bytes.Buffer
+	header := make([]byte, 8)
+
+	for {
+		_, err := io.ReadFull(reader, header)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		size := binary.BigEndian.Uint32(header[4:8])
+		if size == 0 {
+			continue
+		}
+
+		payload := make([]byte, size)
+		_, err = io.ReadFull(reader, payload)
+		if err != nil {
+			return nil, err
+		}
+
+		result.Write(payload)
+	}
+
+	return result.Bytes(), nil
 }

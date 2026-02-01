@@ -115,10 +115,10 @@ func (s *LogService) ListSavedLogs(serverID string) ([]LogFileInfo, error) {
 			CreatedAt: info.ModTime(),
 			Size:      info.Size(),
 		}
-
+		
 		parts := strings.Split(entry.Name(), "-")
-		if len(parts) >= 2 {
-			logFile.ServerName = strings.Join(parts[:len(parts)-4], "-")
+		if len(parts) >= 6 {
+			logFile.ServerName = strings.Join(parts[:len(parts)-5], "-")
 		}
 
 		logs = append(logs, logFile)

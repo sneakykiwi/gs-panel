@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+
 	"github.com/sneakykiwi/gs-panel/internal/forms"
 	"github.com/sneakykiwi/gs-panel/internal/middleware"
 	"github.com/sneakykiwi/gs-panel/internal/models"
@@ -117,8 +119,13 @@ func (h *ServerHandler) Stop(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	var logSaveErr *services.ErrLogSaveFailed
 	if err := h.serverService.Stop(id); err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to stop server: "+err.Error())
+		if errors.As(err, &logSaveErr) {
+			c.Set("HX-Trigger", `{"showWarning": "Server stopped but logs could not be saved"}`)
+		} else {
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to stop server: "+err.Error())
+		}
 	}
 	server, _ := h.serverService.Get(id)
 	return c.Render("partials/server_status", fiber.Map{"Server": server})
@@ -129,8 +136,13 @@ func (h *ServerHandler) Restart(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	var logSaveErr *services.ErrLogSaveFailed
 	if err := h.serverService.Restart(id); err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to restart server: "+err.Error())
+		if errors.As(err, &logSaveErr) {
+			c.Set("HX-Trigger", `{"showWarning": "Server restarted but logs could not be saved"}`)
+		} else {
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to restart server: "+err.Error())
+		}
 	}
 	server, _ := h.serverService.Get(id)
 	return c.Render("partials/server_status", fiber.Map{"Server": server})
@@ -187,7 +199,6 @@ func (h *ServerHandler) EditPage(c fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Server not found")
 	}
 
-	// Check permissions
 	if !user.IsAdmin && !h.serverService.HasAccess(user.ID, serverID) {
 		return fiber.ErrForbidden
 	}
