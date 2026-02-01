@@ -397,7 +397,7 @@ func (s *ConsoleService) BroadcastStatus(serverID string, status string) {
 	key := StreamKey(serverID)
 	for _, ch := range s.connections[key] {
 		select {
-		case ch <- "[status]" + status:
+		case ch <- "[status]" + status + "\n":
 		default:
 		}
 	}
