@@ -16,8 +16,6 @@ import (
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/extractors"
-	"github.com/gofiber/fiber/v3/middleware/csrf"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/gofiber/template/html/v2"
 	"github.com/moby/moby/client"
@@ -56,10 +54,11 @@ func main() {
 
 	templateService := services.NewTemplateService()
 	authService := services.NewAuthService(db)
-	serverService := services.NewServerService(db, dockerClient, cfg, templateService)
+	consoleService := services.NewConsoleService(dockerClient)
+	logService := services.NewLogService(cfg.Storage.Servers, dockerClient)
+	serverService := services.NewServerService(db, dockerClient, cfg, templateService, consoleService, logService)
 	backupService := services.NewBackupService(db, cfg)
 	schedulerService := services.NewSchedulerService(db, backupService)
-	consoleService := services.NewConsoleService(dockerClient)
 	statsService := services.NewStatsService(dockerClient)
 	streamHandler := handlers.NewStreamHandler(serverService, consoleService, statsService)
 
@@ -100,30 +99,31 @@ func main() {
 	app.Use(middleware.GlobalLimiter())
 	app.Use("/static", static.New(staticPath))
 
-	app.Use(csrf.New(csrf.Config{
-		CookieName:     "csrf_",
-		CookieSameSite: "Lax",
-		CookieSecure:   false,
-		CookieHTTPOnly: true,
-		Extractor:      extractors.FromHeader("X-Csrf-Token"),
-		Next: func(c fiber.Ctx) bool {
-			path := c.Path()
-			// Skip CSRF for login/setup pages and static assets
-			return path == "/login" || path == "/setup" || path == "/logout" ||
-				len(path) > 8 && path[:8] == "/static/"
-		},
-		ErrorHandler: func(c fiber.Ctx, err error) error {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "CSRF token validation failed",
-			})
-		},
-	}))
+	//app.Use(csrf.New(csrf.Config{
+	//	CookieName:     "csrf_",
+	//	CookieSameSite: "Lax",
+	//	CookieSecure:   false,
+	//	CookieHTTPOnly: true,
+	//	Extractor:      extractors.FromHeader("X-Csrf-Token"),
+	//	Next: func(c fiber.Ctx) bool {
+	//		path := c.Path()
+	//		// Skip CSRF for login/setup pages and static assets
+	//		return path == "/login" || path == "/setup" || path == "/logout" ||
+	//			len(path) > 8 && path[:8] == "/static/"
+	//	},
+	//	ErrorHandler: func(c fiber.Ctx, err error) error {
+	//		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+	//			"error": "CSRF token validation failed",
+	//		})
+	//	},
+	//}))
 
 	authHandler := handlers.NewAuthHandler(authService)
 	serverHandler := handlers.NewServerHandler(serverService, templateService)
 	backupHandler := handlers.NewBackupHandler(backupService, serverService, schedulerService, cfg)
 	adminHandler := handlers.NewAdminHandler(authService, serverService)
 	filesHandler := handlers.NewFilesHandler(serverService, cfg)
+	logHandler := handlers.NewLogHandler(serverService, logService)
 
 	app.Get("/version", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -156,6 +156,7 @@ func main() {
 	protected.Get("/servers/:id/backups", backupHandler.List)
 	protected.Post("/servers/:id/backups", middleware.BackupLimiter(), backupHandler.Create)
 	protected.Get("/servers/:id/backups/progress", backupHandler.Progress)
+	logHandler.RegisterRoutes(app)
 	protected.Delete("/backups/:backupId", backupHandler.Delete)
 	protected.Post("/backups/:backupId/restore", backupHandler.Restore)
 	protected.Get("/backups/:backupId/verify", backupHandler.Verify)

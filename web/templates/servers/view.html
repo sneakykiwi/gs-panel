@@ -77,7 +77,12 @@
 
             <!-- CONSOLE -->
             <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-                <h2 class="text-xl font-bold mb-4">Console</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Console</h2>
+                    <span id="console-status" class="px-2 py-1 rounded text-xs font-medium bg-gray-600 text-gray-300">
+                        Connecting...
+                    </span>
+                </div>
 
                 <div id="console-out"
                      class="bg-gray-900 rounded p-4 h-64 overflow-auto font-mono text-sm text-gray-300 whitespace-pre-wrap">
@@ -88,9 +93,12 @@
                            id="console-input"
                            name="command"
                            placeholder="Enter command..."
-                           class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded">
+                           disabled
+                           class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed">
                     <button type="submit"
-                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                            id="console-submit"
+                            disabled
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600">
                         Send
                     </button>
                 </form>
@@ -99,7 +107,7 @@
             <!-- STATS -->
             <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
                 <h2 class="text-xl font-bold mb-4">Stats</h2>
-
+ 
                 <div class="grid grid-cols-2 gap-4 text-sm text-gray-300">
                     <div class="bg-gray-900 rounded p-4">
                         <div class="text-gray-400">CPU</div>
@@ -119,6 +127,14 @@
                     </div>
                 </div>
             </div>
+
+            <!-- SAVED LOGS -->
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h2 class="text-xl font-bold mb-4">Saved Logs</h2>
+                <div id="logs-list" hx-get="/servers/{{.Server.ID}}/logs" hx-trigger="load" hx-swap="innerHTML">
+                    <div class="text-gray-400 text-sm">Loading logs...</div>
+                </div>
+            </div>
         </div>
 
         <script>
@@ -128,18 +144,75 @@
             const wsUrl = scheme + '//' + location.host + '/servers/' + serverId + '/ws?interval=1000';
 
             let ws = null;
+            let currentStatus = 'connecting';
             const consoleOut = document.getElementById('console-out');
             const consoleForm = document.getElementById('console-form');
             const consoleInput = document.getElementById('console-input');
+            const consoleSubmit = document.getElementById('console-submit');
+            const consoleStatus = document.getElementById('console-status');
+
+            function updateStatus(status) {
+                currentStatus = status;
+                consoleStatus.className = 'px-2 py-1 rounded text-xs font-medium';
+                
+                switch(status) {
+                    case 'connected':
+                        consoleStatus.textContent = 'Connected';
+                        consoleStatus.classList.add('bg-green-600', 'text-white');
+                        consoleInput.disabled = false;
+                        consoleSubmit.disabled = false;
+                        consoleInput.placeholder = 'Enter command...';
+                        break;
+                    case 'connecting':
+                        consoleStatus.textContent = 'Connecting...';
+                        consoleStatus.classList.add('bg-yellow-600', 'text-white');
+                        consoleInput.disabled = true;
+                        consoleSubmit.disabled = true;
+                        consoleInput.placeholder = 'Connecting to server...';
+                        break;
+                    case 'waiting':
+                        consoleStatus.textContent = 'Server Offline';
+                        consoleStatus.classList.add('bg-gray-600', 'text-gray-300');
+                        consoleInput.disabled = true;
+                        consoleSubmit.disabled = true;
+                        consoleInput.placeholder = 'Start server to enter commands...';
+                        break;
+                    case 'disconnected':
+                        consoleStatus.textContent = 'Reconnecting...';
+                        consoleStatus.classList.add('bg-yellow-600', 'text-white');
+                        consoleInput.disabled = true;
+                        consoleSubmit.disabled = true;
+                        consoleInput.placeholder = 'Reconnecting...';
+                        break;
+                    default:
+                        if (status.startsWith('error')) {
+                            consoleStatus.textContent = 'Error';
+                            consoleStatus.classList.add('bg-red-600', 'text-white');
+                        } else {
+                            consoleStatus.textContent = status;
+                            consoleStatus.classList.add('bg-gray-600', 'text-gray-300');
+                        }
+                        consoleInput.disabled = true;
+                        consoleSubmit.disabled = true;
+                }
+            }
 
             function connect() {
+                updateStatus('connecting');
                 ws = new WebSocket(wsUrl);
+                
+                ws.onopen = function() {
+                    updateStatus('connecting');
+                };
+                
                 ws.onmessage = function(ev) {
                     try {
                         const msg = JSON.parse(ev.data);
                         if (msg.type === 'log') {
                             consoleOut.appendChild(document.createTextNode(msg.data));
                             consoleOut.scrollTop = consoleOut.scrollHeight;
+                        } else if (msg.type === 'status') {
+                            updateStatus(msg.data);
                         } else if (msg.type === 'stats' && msg.data) {
                             document.getElementById('cpu-value').textContent = msg.data.cpu || '—';
                             document.getElementById('mem-value').textContent = msg.data.mem || '—';
@@ -148,9 +221,15 @@
                         }
                     } catch (_) {}
                 };
+                
                 ws.onclose = function() {
                     ws = null;
+                    updateStatus('disconnected');
                     setTimeout(connect, 3000);
+                };
+                
+                ws.onerror = function() {
+                    updateStatus('error');
                 };
             }
 
@@ -160,6 +239,11 @@
                 e.preventDefault();
                 const cmd = (consoleInput.value || '').trim();
                 if (!cmd || !ws || ws.readyState !== WebSocket.OPEN) return;
+                if (currentStatus !== 'connected') {
+                    consoleOut.appendChild(document.createTextNode('[error] Server is not running\n'));
+                    consoleOut.scrollTop = consoleOut.scrollHeight;
+                    return;
+                }
                 ws.send(JSON.stringify({ type: 'command', data: cmd }));
                 consoleInput.value = '';
             });

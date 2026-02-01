@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sneakykiwi/gs-panel/internal/config"
+	"github.com/sneakykiwi/gs-panel/internal/logger"
 	"github.com/sneakykiwi/gs-panel/internal/models"
 
 	"github.com/google/uuid"
@@ -26,19 +28,35 @@ var (
 	ErrServerRunning  = errors.New("server is running")
 )
 
-type ServerService struct {
-	db        *gorm.DB
-	docker    *client.Client
-	cfg       *config.Config
-	templates *TemplateService
+type ErrLogSaveFailed struct {
+	Err error
 }
 
-func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, templates *TemplateService) *ServerService {
+func (e *ErrLogSaveFailed) Error() string {
+	return fmt.Sprintf("server stopped but logs could not be saved: %v", e.Err)
+}
+
+func (e *ErrLogSaveFailed) Unwrap() error {
+	return e.Err
+}
+
+type ServerService struct {
+	db             *gorm.DB
+	docker         *client.Client
+	cfg            *config.Config
+	templates      *TemplateService
+	consoleService *ConsoleService
+	logService     *LogService
+}
+
+func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, templates *TemplateService, consoleService *ConsoleService, logService *LogService) *ServerService {
 	return &ServerService{
-		db:        db,
-		docker:    docker,
-		cfg:       cfg,
-		templates: templates,
+		db:             db,
+		docker:         docker,
+		cfg:            cfg,
+		templates:      templates,
+		consoleService: consoleService,
+		logService:     logService,
 	}
 }
 
@@ -162,7 +180,15 @@ func (s *ServerService) Start(id string) error {
 	}
 
 	server.Status = models.ServerStatusRunning
-	return s.db.Save(server).Error
+	if err := s.db.Save(server).Error; err != nil {
+		return err
+	}
+
+	if s.consoleService != nil {
+		s.consoleService.EnsureSession(server.ID, server.ContainerID)
+	}
+
+	return nil
 }
 
 func (s *ServerService) Stop(id string) error {
@@ -175,7 +201,21 @@ func (s *ServerService) Stop(id string) error {
 		return nil
 	}
 
+	// Notify console service that server is stopping
+	if s.consoleService != nil {
+		s.consoleService.StopSession(server.ID)
+	}
+
+	// Save container logs before stopping - track error to report after successful stop
+	var logSaveErr error
 	ctx := context.Background()
+	if s.logService != nil && server.ContainerID != "" {
+		if err := s.logService.SaveContainerLogs(ctx, server.ID, server.Name, server.ContainerID, time.Now()); err != nil {
+			logger.Error().Str("server_id", server.ID).Err(err).Msg("Failed to save container logs")
+			logSaveErr = err
+		}
+	}
+
 	timeout := 30
 	_, err = s.docker.ContainerStop(ctx, server.ContainerID, client.ContainerStopOptions{Timeout: &timeout})
 	if err != nil {
@@ -183,14 +223,36 @@ func (s *ServerService) Stop(id string) error {
 	}
 
 	server.Status = models.ServerStatusStopped
-	return s.db.Save(server).Error
+	if err := s.db.Save(server).Error; err != nil {
+		return err
+	}
+
+	// Return log save error after successful stop so caller can warn user
+	if logSaveErr != nil {
+		return &ErrLogSaveFailed{Err: logSaveErr}
+	}
+
+	return nil
 }
 
 func (s *ServerService) Restart(id string) error {
+	var logSaveErr *ErrLogSaveFailed
 	if err := s.Stop(id); err != nil {
+		// If log saving failed but server stopped successfully, continue with restart
+		if errors.As(err, &logSaveErr) {
+			// Continue to start, will return log save warning after
+		} else {
+			return err
+		}
+	}
+	if err := s.Start(id); err != nil {
 		return err
 	}
-	return s.Start(id)
+	// Return log save warning if it occurred during stop
+	if logSaveErr != nil {
+		return logSaveErr
+	}
+	return nil
 }
 
 func (s *ServerService) createContainer(ctx context.Context, server *models.Server) (string, error) {
@@ -322,7 +384,6 @@ func (s *ServerService) SyncAllStatuses() error {
 
 func (s *ServerService) UserHasAccess(userID, serverID string) (bool, error) {
 	var count int64
-	// server_users is the join table configured by gorm many2many.
 	if err := s.db.Table("server_users").Where("server_id = ? AND user_id = ?", serverID, userID).Count(&count).Error; err != nil {
 		return false, err
 	}
@@ -336,35 +397,29 @@ type UpdateServerRequest struct {
 }
 
 func (s *ServerService) Update(id string, req UpdateServerRequest) error {
-	// Get server
 	server, err := s.Get(id)
 	if err != nil {
 		return err
 	}
 
-	// Validate port conflicts if port is being changed
 	if req.Port != server.Port {
 		if err := s.ValidatePort(req.Port, id); err != nil {
 			return err
 		}
 	}
 
-	// Check if server is running
 	isRunning := server.Status == models.ServerStatusRunning
 
-	// Stop server if running (to apply new configuration)
 	if isRunning {
 		if err := s.Stop(id); err != nil {
 			return fmt.Errorf("failed to stop server: %w", err)
 		}
 	}
 
-	// Update database
 	server.Name = req.Name
 	server.MemoryLimit = req.MemoryLimit
 	server.Port = req.Port
 
-	// Update environment variables with new memory limit
 	env := s.templates.DecodeEnvironment(server.Environment)
 	for k, v := range env {
 		env[k] = strings.ReplaceAll(v, strconv.Itoa(server.MemoryLimit), strconv.Itoa(req.MemoryLimit))
@@ -375,7 +430,6 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 		return fmt.Errorf("failed to update server: %w", err)
 	}
 
-	// Restart server if it was running
 	if isRunning {
 		if err := s.Start(id); err != nil {
 			return fmt.Errorf("server updated but failed to restart: %w", err)
