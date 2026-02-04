@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/sneakykiwi/gs-panel/internal/config"
 	"github.com/sneakykiwi/gs-panel/internal/logger"
@@ -89,48 +90,103 @@ func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, te
 	}
 }
 
-// getHostBasePath returns the host mountpoint for the Docker volume when running containerized.
-// This is needed because Docker bind mounts require host-side paths, not container-internal paths.
-// Returns empty string if not running in Docker (volume not found), meaning paths should be used as-is.
-func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
-	// Try to auto-detect the data volume if not explicitly set
-	volumeName := s.cfg.Docker.DataVolumeName
-	if volumeName == "" {
-		volumeName = "gs-panel-data" // Default volume name
-	}
-
-	logger.Debug().Str("volume", volumeName).Msg("Inspecting Docker volume for host mountpoint")
-	result, err := s.docker.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
+func getSelfContainerID() (string, error) {
+	data, err := os.ReadFile("/proc/1/cgroup")
 	if err != nil {
-		// Volume not found - assume we're running natively without Docker
-		logger.Debug().Str("volume", volumeName).Err(err).Msg("Docker volume not found, assuming native mode")
+		return "", err
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		// For cgroup v1: format like '4:memory:/docker/<64-char-id>'
+		// For cgroup v2: unified, like '0::/system.slice/docker-<64-char-id>.scope'
+		parts := strings.Split(line, ":")
+		if len(parts) < 3 {
+			continue
+		}
+		path := parts[2]
+
+		var id string
+		if strings.Contains(path, "/docker/") {
+			segments := strings.Split(path, "/docker/")
+			if len(segments) > 1 {
+				id = strings.Split(segments[1], "/")[0]
+			}
+		} else if strings.Contains(path, "docker-") {
+			start := strings.Index(path, "docker-") + len("docker-")
+			if start < len("docker-") {
+				continue
+			}
+			end := strings.Index(path[start:], ".scope")
+			if end == -1 {
+				end = len(path) - start
+			} else {
+				end += start
+			}
+			id = path[start:end]
+		}
+
+		if id != "" && len(id) == 64 && isHex(id) {
+			return id, nil
+		}
+	}
+	return "", fmt.Errorf("could not find container ID, assuming not in Docker")
+}
+
+func isHex(s string) bool {
+	for _, r := range s {
+		if !unicode.IsDigit(r) && !(r >= 'a' && r <= 'f') && !(r >= 'A' && r <= 'F') {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
+	selfID, err := getSelfContainerID()
+	if err != nil {
+		logger.Debug().Err(err).Msg("Not running in Docker container, using paths as-is")
 		return "", nil
 	}
 
-	logger.Debug().Str("mountpoint", result.Volume.Mountpoint).Str("volume", volumeName).Msg("Found host mountpoint for volume")
-	return result.Volume.Mountpoint, nil
+	insp, err := s.docker.ContainerInspect(ctx, selfID, client.ContainerInspectOptions{})
+	if err != nil {
+		logger.Error().Err(err).Msg("Failed to inspect own container")
+		return "", err
+	}
+
+	for _, m := range insp.Container.Mounts {
+		if m.Destination == "/data" && (m.Type == "bind" || m.Type == "volume") {
+			logger.Debug().
+				Str("type", string(m.Type)).
+				Str("source", m.Source).
+				Str("destination", m.Destination).
+				Msg("Found host mountpoint for /data")
+			return m.Source, nil
+		}
+	}
+
+	logger.Warn().Msg("/data mount not found in own container, assuming native mode")
+	return "", nil
 }
 
-// translatePathForDocker converts container-internal paths to host paths when running in Docker.
-// Example: /data/servers/xxx -> /var/lib/docker/volumes/gs-panel-data/_data/servers/xxx
 func (s *ServerService) translatePathForDocker(ctx context.Context, containerPath string) (string, error) {
 	hostBase, err := s.getHostBasePath(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	// If not running in Docker (no volume name set), return path as-is
 	if hostBase == "" {
 		return containerPath, nil
 	}
 
-	// Ensure the path starts with /data before translating
 	if !strings.HasPrefix(containerPath, "/data") {
 		logger.Warn().Str("path", containerPath).Msg("Path doesn't start with /data, skipping translation")
 		return containerPath, nil
 	}
 
-	// Remove /data prefix and join with host mountpoint
 	relativePath := strings.TrimPrefix(containerPath, "/data")
 	hostPath := filepath.Join(hostBase, relativePath)
 
