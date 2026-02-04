@@ -34,8 +34,9 @@ type StorageConfig struct {
 }
 
 type DockerConfig struct {
-	Socket  string
-	Network string
+	Socket         string
+	Network        string
+	DataVolumeName string // Volume name for path translation when running in Docker
 }
 
 type SecurityConfig struct {
@@ -81,8 +82,9 @@ func Load() *Config {
 			UserTemplates:    getEnv("GS_PANEL_USER_TEMPLATES_DIR", filepath.Join(baseDir, "templates")),
 		},
 		Docker: DockerConfig{
-			Socket:  getEnv("GS_PANEL_DOCKER_SOCKET", defaultSocket),
-			Network: getEnv("GS_PANEL_DOCKER_NETWORK", "gs-panel"),
+			Socket:         getEnv("GS_PANEL_DOCKER_SOCKET", defaultSocket),
+			Network:        getEnv("GS_PANEL_DOCKER_NETWORK", "gs-panel"),
+			DataVolumeName: getEnv("GS_PANEL_DATA_VOLUME", "gs-panel-data"),
 		},
 		Security: SecurityConfig{
 			AllowedMountPrefixes: getEnvList("GS_PANEL_ALLOWED_MOUNT_PREFIXES", []string{serversDir}),
