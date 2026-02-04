@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/sneakykiwi/gs-panel/internal/config"
 	"github.com/sneakykiwi/gs-panel/internal/logger"
@@ -90,85 +89,39 @@ func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, te
 	}
 }
 
-func getSelfContainerID() (string, error) {
-	data, err := os.ReadFile("/proc/1/cgroup")
-	if err != nil {
-		return "", err
+func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
+	// Quick check if we're even in Docker
+	if _, err := os.Stat("/.dockerenv"); os.IsNotExist(err) {
+		logger.Info().Msg("Not running in Docker (no /.dockerenv), using container paths directly")
+		return "", nil
 	}
+
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		logger.Warn().Err(err).Msg("Failed to read /proc/self/mountinfo, falling back to native paths")
+		return "", nil
+	}
+
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		if line == "" {
 			continue
 		}
-		// For cgroup v1: format like '4:memory:/docker/<64-char-id>'
-		// For cgroup v2: unified, like '0::/system.slice/docker-<64-char-id>.scope'
-		parts := strings.Split(line, ":")
-		if len(parts) < 3 {
+		fields := strings.Fields(line)
+		if len(fields) < 10 {
 			continue
 		}
-		path := parts[2]
 
-		var id string
-		if strings.Contains(path, "/docker/") {
-			segments := strings.Split(path, "/docker/")
-			if len(segments) > 1 {
-				id = strings.Split(segments[1], "/")[0]
-			}
-		} else if strings.Contains(path, "docker-") {
-			start := strings.Index(path, "docker-") + len("docker-")
-			if start < len("docker-") {
-				continue
-			}
-			end := strings.Index(path[start:], ".scope")
-			if end == -1 {
-				end = len(path) - start
-			} else {
-				end += start
-			}
-			id = path[start:end]
-		}
+		destination := fields[9] // mount destination in container
+		source := fields[8]      // host-side source path
 
-		if id != "" && len(id) == 64 && isHex(id) {
-			return id, nil
-		}
-	}
-	return "", fmt.Errorf("could not find container ID, assuming not in Docker")
-}
-
-func isHex(s string) bool {
-	for _, r := range s {
-		if !unicode.IsDigit(r) && !(r >= 'a' && r <= 'f') && !(r >= 'A' && r <= 'F') {
-			return false
-		}
-	}
-	return true
-}
-
-func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
-	selfID, err := getSelfContainerID()
-	if err != nil {
-		logger.Debug().Err(err).Msg("Not running in Docker container, using paths as-is")
-		return "", nil
-	}
-
-	insp, err := s.docker.ContainerInspect(ctx, selfID, client.ContainerInspectOptions{})
-	if err != nil {
-		logger.Error().Err(err).Msg("Failed to inspect own container")
-		return "", err
-	}
-
-	for _, m := range insp.Container.Mounts {
-		if m.Destination == "/data" && (m.Type == "bind" || m.Type == "volume") {
-			logger.Debug().
-				Str("type", string(m.Type)).
-				Str("source", m.Source).
-				Str("destination", m.Destination).
-				Msg("Found host mountpoint for /data")
-			return m.Source, nil
+		if destination == "/data" {
+			logger.Info().Str("host_base_path", source).Msg("Successfully detected host path for /data")
+			return source, nil
 		}
 	}
 
-	logger.Warn().Msg("/data mount not found in own container, assuming native mode")
+	logger.Warn().Msg("Could not find exact /data mount in /proc/self/mountinfo, falling back to native mode")
 	return "", nil
 }
 
@@ -178,23 +131,18 @@ func (s *ServerService) translatePathForDocker(ctx context.Context, containerPat
 		return "", err
 	}
 
-	if hostBase == "" {
-		return containerPath, nil
-	}
-
-	if !strings.HasPrefix(containerPath, "/data") {
-		logger.Warn().Str("path", containerPath).Msg("Path doesn't start with /data, skipping translation")
+	if hostBase == "" || !strings.HasPrefix(containerPath, "/data") {
+		logger.Info().Str("path", containerPath).Msg("Path translation skipped (native mode or not under /data)")
 		return containerPath, nil
 	}
 
 	relativePath := strings.TrimPrefix(containerPath, "/data")
 	hostPath := filepath.Join(hostBase, relativePath)
 
-	logger.Debug().
+	logger.Info().
 		Str("container_path", containerPath).
 		Str("host_path", hostPath).
-		Str("volume", s.cfg.Docker.DataVolumeName).
-		Msg("Translated container path to host path")
+		Msg("Translated path for Docker bind mount")
 
 	return hostPath, nil
 }

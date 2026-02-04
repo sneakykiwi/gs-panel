@@ -14,8 +14,6 @@ services:
     environment:
       - GS_PANEL_DATA_DIR=/data
     group_add:
-    # Add this to grant the container user access to /var/run/docker.sock by matching the host's Docker GID
-    # Uncomment and set to your actual DOCKER_GID value (defaults to 999 if ${DOCKER_GID} is not set)
     # - "${DOCKER_GID:-999}"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
