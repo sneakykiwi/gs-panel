@@ -1,5 +1,7 @@
 package auth
 
+import "github.com/sneakykiwi/gs-panel/views/components"
+
 templ SetupPage(errorMsg string) {
 	<!DOCTYPE html>
 	<html lang="en">
@@ -35,6 +37,7 @@ templ SetupPage(errorMsg string) {
 				}
 
 				<form method="POST" action="/setup">
+					@components.CsrfToken()
 					<div class="mb-4">
 						<label class="block text-sm font-medium mb-2" for="email">Email</label>
 						<input type="email" id="email" name="email" required

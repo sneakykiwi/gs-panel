@@ -1,0 +1,6 @@
+package components
+
+// CsrfToken renders a hidden input field with the CSRF token from context
+templ CsrfToken() {
+	<input type="hidden" name="csrf_token" value={ ctx.Value("csrf_token").(string) }/>
+}
