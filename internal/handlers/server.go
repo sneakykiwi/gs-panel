@@ -146,7 +146,6 @@ func (h *ServerHandler) CreateAdvanced(c fiber.Ctx) error {
 	}
 
 	serverName := c.FormValue("server_name")
-	templateID := c.FormValue("template_id")
 	yamlContent := c.FormValue("yaml_content")
 	memoryLimit := c.FormValue("memory_limit")
 	port := c.FormValue("port")
@@ -155,24 +154,31 @@ func (h *ServerHandler) CreateAdvanced(c fiber.Ctx) error {
 	if serverName == "" {
 		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Server name is required"))
 	}
-	if templateID == "" {
-		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Template ID is required"))
-	}
 
 	var template services.GameTemplate
 	if err := h.templateService.ParseYAML(yamlContent, &template); err != nil {
 		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Invalid YAML: "+err.Error()))
 	}
 
-	template.ID = templateID
 	template.IsBuiltIn = false
+
+	if template.ID == "" {
+		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Template ID is required in YAML"))
+	}
 
 	if template.DockerImage == "" {
 		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Docker image is required in template"))
 	}
 
-	if _, exists := h.templateService.Get(templateID); exists {
-		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Template ID already exists. Choose a different ID."))
+	// If template ID already exists, append a number to make it unique
+	baseID := template.ID
+	counter := 1
+	for {
+		if _, exists := h.templateService.Get(template.ID); !exists {
+			break
+		}
+		template.ID = fmt.Sprintf("%s-%d", baseID, counter)
+		counter++
 	}
 
 	if saveTemplate {
@@ -199,7 +205,7 @@ func (h *ServerHandler) CreateAdvanced(c fiber.Ctx) error {
 
 	_, err := h.serverService.Create(services.CreateServerRequest{
 		Name:        serverName,
-		GameType:    templateID,
+		GameType:    template.ID,
 		MemoryLimit: memLimit,
 		Port:        serverPort,
 	})
@@ -220,6 +226,21 @@ func (h *ServerHandler) View(c fiber.Ctx) error {
 	isOutdated := h.serverService.IsTemplateOutdated(server)
 	newVersion := h.serverService.GetTemplateVersion(server.GameType)
 	return Render(c, servers.ViewPage(server, user, isOutdated, newVersion))
+}
+
+func (h *ServerHandler) ViewTemplateConfig(c fiber.Ctx) error {
+	server, err := h.syncAndGetServer(c)
+	if err != nil {
+		return err
+	}
+
+	user := middleware.GetUser(c)
+	yamlContent, err := h.serverService.GetServerTemplateYAML(server)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get template config: "+err.Error())
+	}
+
+	return Render(c, servers.TemplateConfigPage(server, user, yamlContent))
 }
 
 func (h *ServerHandler) Delete(c fiber.Ctx) error {

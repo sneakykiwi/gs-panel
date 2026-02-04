@@ -27,6 +27,7 @@ type Server struct {
 	Environment       string           `gorm:"type:text" json:"-"`
 	CustomEnvironment string           `gorm:"type:text" json:"-"`
 	TemplateVersion   string           `json:"template_version"`
+	TemplateConfig    string           `gorm:"type:text" json:"-"` // Full template config stored as JSON
 	CreatedAt         time.Time        `json:"created_at"`
 	UpdatedAt         time.Time        `json:"updated_at"`
 	DeletedAt         gorm.DeletedAt   `gorm:"index" json:"-"`

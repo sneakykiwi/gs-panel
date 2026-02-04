@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -60,6 +61,40 @@ func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, te
 	}
 }
 
+func (s *ServerService) GetServerTemplate(server *models.Server) (GameTemplate, bool) {
+	if server.TemplateConfig != "" {
+		var template GameTemplate
+		if err := json.Unmarshal([]byte(server.TemplateConfig), &template); err == nil {
+			return template, true
+		}
+		logger.Warn().Str("server_id", server.ID).Msg("Failed to parse stored template config, falling back to template files")
+	}
+
+	template, ok := s.templates.Get(server.GameType)
+	if ok {
+		s.SetServerTemplate(server, template)
+		s.db.Save(server)
+	}
+	return template, ok
+}
+
+func (s *ServerService) SetServerTemplate(server *models.Server, template GameTemplate) error {
+	data, err := json.Marshal(template)
+	if err != nil {
+		return fmt.Errorf("failed to serialize template config: %w", err)
+	}
+	server.TemplateConfig = string(data)
+	return nil
+}
+
+func (s *ServerService) GetServerTemplateYAML(server *models.Server) (string, error) {
+	template, ok := s.GetServerTemplate(server)
+	if !ok {
+		return "", fmt.Errorf("no template config found for server")
+	}
+	return s.templates.TemplateToYAML(template), nil
+}
+
 type CreateServerRequest struct {
 	Name        string
 	GameType    string
@@ -101,6 +136,12 @@ func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) 
 		customEnvStr = s.templates.EncodeEnvironment(req.CustomVars)
 	}
 
+	templateConfigData, err := json.Marshal(template)
+	if err != nil {
+		os.RemoveAll(serverPath)
+		return nil, fmt.Errorf("failed to serialize template config: %w", err)
+	}
+
 	server := &models.Server{
 		ID:                serverID,
 		Name:              req.Name,
@@ -112,6 +153,7 @@ func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) 
 		Environment:       s.templates.EncodeEnvironment(env),
 		CustomEnvironment: customEnvStr,
 		TemplateVersion:   template.Version,
+		TemplateConfig:    string(templateConfigData),
 	}
 
 	if err := s.db.Create(server).Error; err != nil {
@@ -213,7 +255,7 @@ func (s *ServerService) Stop(id string) error {
 		return nil
 	}
 
-	template, _ := s.templates.Get(server.GameType)
+	template, _ := s.GetServerTemplate(server)
 
 	if s.consoleService != nil && server.Status == models.ServerStatusRunning {
 		if template.SaveCommand != "" {
@@ -278,7 +320,7 @@ func (s *ServerService) Restart(id string) error {
 }
 
 func (s *ServerService) createContainer(ctx context.Context, server *models.Server) (string, error) {
-	template, _ := s.templates.Get(server.GameType)
+	template, _ := s.GetServerTemplate(server)
 
 	pullResp, err := s.docker.ImagePull(ctx, server.DockerImage, client.ImagePullOptions{})
 	if err != nil {
@@ -626,6 +668,10 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 	server.Environment = s.templates.EncodeEnvironment(env)
 	server.DockerImage = template.DockerImage
 	server.TemplateVersion = template.Version
+
+	if err := s.SetServerTemplate(server, template); err != nil {
+		return fmt.Errorf("failed to store template config: %w", err)
+	}
 
 	if err := s.db.Save(server).Error; err != nil {
 		return fmt.Errorf("failed to update server: %w", err)

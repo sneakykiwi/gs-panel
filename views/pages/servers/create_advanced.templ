@@ -51,13 +51,12 @@ templ CreateAdvancedPage(user *models.User, template services.GameTemplate, yaml
 										placeholder="My Custom Server"/>
 								</div>
 								<div>
-									<label class="block text-sm font-medium mb-2" for="template_id">Custom Template ID</label>
-									<input type="text" id="template_id" name="template_id" required
+									<label class="block text-sm font-medium mb-2" for="docker_image">Docker Image</label>
+									<input type="text" id="docker_image" name="docker_image" required
 										class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-										value={ template.ID + "-custom" }
-										pattern="[a-z0-9-]+"
-										title="Lowercase letters, numbers, and hyphens only"/>
-									<p class="text-gray-500 text-xs mt-1">Unique ID for your custom template</p>
+										value={ template.DockerImage }
+										placeholder="e.g. itzg/minecraft-server:latest"/>
+									<p class="text-gray-500 text-xs mt-1">Docker image to use for the server</p>
 								</div>
 							</div>
 
@@ -109,6 +108,12 @@ templ CreateAdvancedPage(user *models.User, template services.GameTemplate, yaml
 								</a>
 							</div>
 						</form>
+
+						<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.css"/>
+						<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/theme/dracula.min.css"/>
+						<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.js"></script>
+						<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/yaml/yaml.min.js"></script>
+						@advancedEditorScript()
 					</div>
 
 					<div class="space-y-4">
@@ -167,3 +172,74 @@ templ VariableItem(variable string, description string) {
 		<span class="text-gray-500 text-xs">{ description }</span>
 	</div>
 }
+
+script advancedEditorScript() {
+	var advEditor = CodeMirror.fromTextArea(document.getElementById("yaml-editor"), {
+		lineNumbers: true,
+		mode: "yaml",
+		theme: "dracula",
+		tabSize: 2,
+		indentWithTabs: false,
+		extraKeys: {"Tab": "indentMore", "Shift-Tab": "indentLess"},
+		viewportMargin: Infinity
+	});
+	advEditor.setSize("100%", null);
+
+	var dockerImageInput = document.getElementById("docker_image");
+	var serverNameInput = document.getElementById("server_name");
+	var updatingFromInput = false;
+	var updatingFromEditor = false;
+
+	function updateYamlField(fieldName, newValue) {
+		var content = advEditor.getValue();
+		var regex = new RegExp("^(" + fieldName + ":\\s*)(.*)$", "m");
+		if (regex.test(content)) {
+			content = content.replace(regex, "$1" + newValue);
+		} else {
+			var lines = content.split("\n");
+			lines.splice(1, 0, fieldName + ": " + newValue);
+			content = lines.join("\n");
+		}
+		advEditor.setValue(content);
+	}
+
+	function getYamlField(fieldName) {
+		var content = advEditor.getValue();
+		var regex = new RegExp("^" + fieldName + ":\\s*(.*)$", "m");
+		var match = content.match(regex);
+		return match ? match[1].trim().replace(/^["']|["']$/g, '') : null;
+	}
+
+	dockerImageInput.addEventListener("input", function() {
+		if (updatingFromEditor) return;
+		updatingFromInput = true;
+		updateYamlField("docker_image", dockerImageInput.value);
+		updatingFromInput = false;
+	});
+
+	serverNameInput.addEventListener("input", function() {
+		if (updatingFromEditor) return;
+		updatingFromInput = true;
+		updateYamlField("name", '"' + serverNameInput.value + '"');
+		updatingFromInput = false;
+	});
+
+	advEditor.on("change", function() {
+		if (updatingFromInput) return;
+		updatingFromEditor = true;
+		var dockerImage = getYamlField("docker_image");
+		if (dockerImage !== null) {
+			dockerImageInput.value = dockerImage;
+		}
+		var name = getYamlField("name");
+		if (name !== null) {
+			serverNameInput.value = name;
+		}
+		updatingFromEditor = false;
+	});
+
+	document.getElementById("advanced-form").onsubmit = function() {
+		advEditor.save();
+	};
+}
+

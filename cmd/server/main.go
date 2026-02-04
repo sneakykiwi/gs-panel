@@ -134,6 +134,7 @@ func main() {
 	protected.Post("/servers", serverHandler.Create)
 	protected.Get("/servers/:id", serverHandler.View)
 	protected.Get("/servers/:id/edit", serverHandler.EditPage)
+	protected.Get("/servers/:id/template", serverHandler.ViewTemplateConfig)
 	protected.Put("/servers/:id", serverHandler.Update)
 	protected.Post("/servers/:id/start", serverHandler.Start)
 	protected.Post("/servers/:id/stop", serverHandler.Stop)

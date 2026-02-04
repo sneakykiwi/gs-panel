@@ -66,7 +66,15 @@ templ ServerControls(server *models.Server, isAdmin bool) {
 		>
 			Edit Settings
 		</a>
-		
+
+		<!-- View Template Button -->
+		<a
+			href={ templ.URL("/servers/" + server.ID + "/template") }
+			class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded transition inline-block"
+		>
+			View Template
+		</a>
+
 		if isAdmin {
 			<button 
 				hx-delete={ "/servers/" + server.ID }
