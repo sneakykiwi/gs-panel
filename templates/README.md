@@ -1,100 +1,58 @@
 # Game Server Templates
 
-This directory contains the default game server templates that ship with GS Panel.
+Templates define how game server containers are created and managed.
 
-## Template Structure
-
-Templates are YAML files that define how a game server container should be created and managed.
+## Structure
 
 ### Required Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | string | Unique identifier (lowercase, no spaces, use hyphens) |
-| `name` | string | Display name shown in the UI |
-| `docker_image` | string | Docker image to use (e.g., `itzg/minecraft-server:latest`) |
+| `id` | string | Unique identifier (lowercase, hyphens) |
+| `name` | string | Display name |
+| `docker_image` | string | Docker image to use |
 
-### Optional Fields
+### Common Fields
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `version` | string | `1.0.0` | Template version for tracking updates |
-| `default_port` | int | - | Default port for the game server |
-| `default_memory` | int | - | Default memory limit in MB |
-| `protocol` | string | `both` | Port protocol: `tcp`, `udp`, or `both` |
-| `environment` | map | `{}` | Environment variables for the container |
-| `stop_command` | string | - | Command to send via console for graceful stop |
-| `save_command` | string | - | Command to send via console to save before stop |
-| `stop_timeout` | int | `30` | Seconds to wait for graceful shutdown |
-| `var_descriptions` | map | `{}` | Descriptions for env vars (shown as tooltips in UI) |
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | string | Template version |
+| `default_port` | int | Default port |
+| `default_memory` | int | Default memory (MB) |
+| `protocol` | string | `tcp`, `udp`, or `both` |
+| `environment` | map | Environment variables |
+| `stop_command` | string | Graceful stop command |
+| `save_command` | string | Save command before stop |
+| `stop_timeout` | int | Shutdown timeout (seconds) |
 
 ### Advanced Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `additional_ports` | list | Extra ports to expose (see below) |
-| `volumes` | list | Additional volume mounts (see below) |
-| `entrypoint` | list | Override container entrypoint |
-| `cmd` | list | Override container command |
-| `health_check` | object | Container health check config |
-| `user` | string | Container user (e.g., `1000:1000`) |
-| `cap_add` | list | Linux capabilities to add |
+| `additional_ports` | list | Extra ports to expose |
+| `volumes` | list | Additional volume mounts |
+| `entrypoint` | list | Override entrypoint |
+| `cmd` | list | Override command |
+| `health_check` | object | Health check config |
+| `user` | string | Container user |
+| `cap_add` | list | Linux capabilities |
 | `network_mode` | string | Docker network mode |
-| `labels` | map | Container labels |
-| `stop_signal` | string | Signal to send for stop (e.g., `SIGTERM`) |
 
-### Additional Ports
+## Variables
 
-```yaml
-additional_ports:
-  - port: 27015
-    protocol: udp  # tcp, udp, or both
-    purpose: query  # informational, shown in UI
-```
+Use these placeholders in environment values:
 
-### Volumes
+| Variable | Description |
+|----------|-------------|
+| `{{MEMORY}}` | Memory limit (MB) |
+| `{{PORT}}` | Server port |
+| `{{SERVER_ID}}` | Server UUID |
+| `{{SERVER_NAME}}` | Server name |
 
-```yaml
-volumes:
-  - host: backups      # relative to server data dir, or absolute path
-    container: /backups
-    mode: rw           # rw (read-write) or ro (read-only)
-```
-
-### Health Check
+## Example
 
 ```yaml
-health_check:
-  test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-  interval: 30s
-  timeout: 10s
-  retries: 3
-  start_period: 60s
-```
-
-### Variable Substitution
-
-Use these placeholders in environment values - they get replaced with actual values when the server starts:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `{{MEMORY}}` | Server's memory limit in MB | `2048` |
-| `{{PORT}}` | Server's assigned port | `25565` |
-| `{{SERVER_ID}}` | Unique server identifier (UUID) | `019c182e-860f-755c-b18a-a97f5d5c6bf2` |
-| `{{SERVER_NAME}}` | Server's display name | `My Minecraft Server` |
-
-```yaml
-environment:
-  MAX_MEMORY: "{{MEMORY}}M"
-  SERVER_PORT: "{{PORT}}"
-  CUSTOM_ID: "{{SERVER_ID}}"
-  DISPLAY_NAME: "{{SERVER_NAME}}"
-```
-
-## Example Template
-
-```yaml
-id: my-game-server
+id: my-game
 name: My Game Server
 version: "1.0.0"
 docker_image: gameserver/image:latest
@@ -103,37 +61,19 @@ default_memory: 4096
 protocol: udp
 
 environment:
-  SERVER_NAME: "My Server"
-  MAX_PLAYERS: "32"
-  RCON_PASSWORD: ""
-
-additional_ports:
-  - port: 27016
-    protocol: tcp
-    purpose: rcon
+  SERVER_NAME: "{{SERVER_NAME}}"
+  MAX_MEMORY: "{{MEMORY}}M"
 
 stop_command: quit
 save_command: save
 stop_timeout: 60
-
-var_descriptions:
-  SERVER_NAME: "Name shown in the server browser"
-  MAX_PLAYERS: "Maximum number of players"
-  RCON_PASSWORD: "Remote console password"
 ```
 
 ## Custom Templates
 
-User-created templates are stored in `data/templates/` and can be:
+Create custom templates via:
+- Admin UI: `/admin/templates/new`
+- Clone existing templates
+- Add YAML files to `data/templates/`
 
-- Created via the admin UI (`/admin/templates/new`)
-- Cloned from built-in templates
-- Added manually as YAML files
-
-Custom templates are not overwritten on updates.
-
-## Notes
-
-- Template IDs must be unique across both default and custom templates
-- Built-in templates (in this directory) cannot be edited, but can be cloned
-- Changes to templates don't affect existing servers until they are upgraded
+Custom templates are preserved on updates.
