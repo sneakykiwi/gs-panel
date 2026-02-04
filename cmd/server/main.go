@@ -51,7 +51,11 @@ func main() {
 	defer dockerClient.Close()
 	logger.Info().Msg("Docker client connected")
 
-	templateService := services.NewTemplateService()
+	templateService := services.NewTemplateService(cfg.Storage.Templates, &services.SecurityConfig{
+		AllowedMountPrefixes: cfg.Security.AllowedMountPrefixes,
+		AllowedCapAdds:       cfg.Security.AllowedCapAdds,
+		EnablePerUserMounts:  cfg.Security.EnablePerUserMounts,
+	})
 	authService := services.NewAuthService(db)
 	consoleService := services.NewConsoleService(dockerClient)
 	logService := services.NewLogService(cfg.Storage.Servers, dockerClient)
@@ -101,6 +105,7 @@ func main() {
 	adminHandler := handlers.NewAdminHandler(authService, serverService)
 	filesHandler := handlers.NewFilesHandler(serverService, cfg)
 	logHandler := handlers.NewLogHandler(serverService, logService)
+	templateHandler := handlers.NewTemplateHandler(templateService)
 
 	app.Get("/version", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -163,6 +168,7 @@ func main() {
 
 	admin := protected.Group("", middleware.AdminOnly())
 	admin.Delete("/servers/:id", serverHandler.Delete)
+	admin.Post("/servers/:id/upgrade", serverHandler.Upgrade)
 	admin.Get("/admin/users", adminHandler.UsersPage)
 	admin.Get("/admin/users/new", adminHandler.CreateUserPage)
 	admin.Post("/admin/users", adminHandler.CreateUser)
@@ -171,6 +177,12 @@ func main() {
 	admin.Get("/admin/users/:id/servers", adminHandler.UserServersPage)
 	admin.Post("/admin/users/:id/servers", adminHandler.AssignServer)
 	admin.Delete("/admin/users/:id/servers/:serverId", adminHandler.UnassignServer)
+	admin.Get("/admin/templates", templateHandler.List)
+	admin.Get("/admin/templates/:id", templateHandler.Get)
+	admin.Post("/admin/templates", templateHandler.Create)
+	admin.Put("/admin/templates/:id", templateHandler.Update)
+	admin.Delete("/admin/templates/:id", templateHandler.Delete)
+	admin.Post("/admin/templates/reload", templateHandler.Reload)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	logger.Info().Str("address", addr).Msg("Listening on")

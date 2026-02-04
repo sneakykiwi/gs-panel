@@ -245,3 +245,16 @@ func (h *ServerHandler) Update(c fiber.Ctx) error {
 	c.Set("HX-Redirect", "/servers/"+serverID)
 	return c.SendStatus(fiber.StatusOK)
 }
+
+func (h *ServerHandler) Upgrade(c fiber.Ctx) error {
+	id, err := GetServerID(c)
+	if err != nil {
+		return err
+	}
+
+	if err := h.serverService.UpgradeTemplate(id); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to upgrade server: "+err.Error())
+	}
+
+	return c.Redirect().To("/servers/" + id)
+}

@@ -65,6 +65,7 @@ type CreateServerRequest struct {
 	GameType    string
 	MemoryLimit int
 	Port        int
+	CustomVars  map[string]string
 }
 
 func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) {
@@ -91,15 +92,22 @@ func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) 
 		env[k] = strings.ReplaceAll(v, "{{MEMORY}}", strconv.Itoa(req.MemoryLimit))
 	}
 
+	var customEnvStr string
+	if len(req.CustomVars) > 0 {
+		customEnvStr = s.templates.EncodeEnvironment(req.CustomVars)
+	}
+
 	server := &models.Server{
-		ID:          serverID,
-		Name:        req.Name,
-		GameType:    req.GameType,
-		DockerImage: template.DockerImage,
-		Port:        req.Port,
-		MemoryLimit: req.MemoryLimit,
-		Status:      models.ServerStatusStopped,
-		Environment: s.templates.EncodeEnvironment(env),
+		ID:                serverID,
+		Name:              req.Name,
+		GameType:          req.GameType,
+		DockerImage:       template.DockerImage,
+		Port:              req.Port,
+		MemoryLimit:       req.MemoryLimit,
+		Status:            models.ServerStatusStopped,
+		Environment:       s.templates.EncodeEnvironment(env),
+		CustomEnvironment: customEnvStr,
+		TemplateVersion:   template.Version,
 	}
 
 	if err := s.db.Create(server).Error; err != nil {
@@ -201,12 +209,20 @@ func (s *ServerService) Stop(id string) error {
 		return nil
 	}
 
-	// Notify console service that server is stopping
-	if s.consoleService != nil {
+	template, _ := s.templates.Get(server.GameType)
+
+	if s.consoleService != nil && server.Status == models.ServerStatusRunning {
+		if template.SaveCommand != "" {
+			s.consoleService.SendCommand(server.ID, template.SaveCommand)
+			time.Sleep(2 * time.Second)
+		}
+		if template.StopCommand != "" {
+			s.consoleService.SendCommand(server.ID, template.StopCommand)
+			time.Sleep(3 * time.Second)
+		}
 		s.consoleService.StopSession(server.ID)
 	}
 
-	// Save container logs before stopping - track error to report after successful stop
 	var logSaveErr error
 	ctx := context.Background()
 	if s.logService != nil && server.ContainerID != "" {
@@ -216,7 +232,10 @@ func (s *ServerService) Stop(id string) error {
 		}
 	}
 
-	timeout := 30
+	timeout := template.StopTimeout
+	if timeout <= 0 {
+		timeout = 30
+	}
 	_, err = s.docker.ContainerStop(ctx, server.ContainerID, client.ContainerStopOptions{Timeout: &timeout})
 	if err != nil {
 		return err
@@ -227,7 +246,6 @@ func (s *ServerService) Stop(id string) error {
 		return err
 	}
 
-	// Return log save error after successful stop so caller can warn user
 	if logSaveErr != nil {
 		return &ErrLogSaveFailed{Err: logSaveErr}
 	}
@@ -256,6 +274,8 @@ func (s *ServerService) Restart(id string) error {
 }
 
 func (s *ServerService) createContainer(ctx context.Context, server *models.Server) (string, error) {
+	template, _ := s.templates.Get(server.GameType)
+
 	pullResp, err := s.docker.ImagePull(ctx, server.DockerImage, client.ImagePullOptions{})
 	if err != nil {
 		return "", err
@@ -263,6 +283,10 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 	pullResp.Close()
 
 	env := s.templates.DecodeEnvironment(server.Environment)
+	customEnv := s.templates.DecodeEnvironment(server.CustomEnvironment)
+	for k, v := range customEnv {
+		env[k] = v
+	}
 	envList := make([]string, 0, len(env))
 	for k, v := range env {
 		envList = append(envList, fmt.Sprintf("%s=%s", k, v))
@@ -281,17 +305,73 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 		return "", fmt.Errorf("server data directory not found: %s (%w)", serverPath, err)
 	}
 
-	tcpPort := network.MustParsePort(fmt.Sprintf("%d/tcp", server.Port))
-	udpPort := network.MustParsePort(fmt.Sprintf("%d/udp", server.Port))
+	exposedPorts := make(network.PortSet)
+	portBindings := make(network.PortMap)
 	portStr := fmt.Sprintf("%d", server.Port)
+	hostIP := netip.MustParseAddr("0.0.0.0")
+
+	protocol := template.Protocol
+	if protocol == "" {
+		protocol = "both"
+	}
+
+	if protocol == "tcp" || protocol == "both" {
+		tcpPort := network.MustParsePort(fmt.Sprintf("%d/tcp", server.Port))
+		exposedPorts[tcpPort] = struct{}{}
+		portBindings[tcpPort] = []network.PortBinding{{HostIP: hostIP, HostPort: portStr}}
+	}
+	if protocol == "udp" || protocol == "both" {
+		udpPort := network.MustParsePort(fmt.Sprintf("%d/udp", server.Port))
+		exposedPorts[udpPort] = struct{}{}
+		portBindings[udpPort] = []network.PortBinding{{HostIP: hostIP, HostPort: portStr}}
+	}
+
+	for _, p := range template.AdditionalPorts {
+		pStr := fmt.Sprintf("%d", p.Port)
+		pProtocol := strings.ToLower(p.Protocol)
+		if pProtocol == "" {
+			pProtocol = "both"
+		}
+		if pProtocol == "tcp" || pProtocol == "both" {
+			port := network.MustParsePort(fmt.Sprintf("%d/tcp", p.Port))
+			exposedPorts[port] = struct{}{}
+			portBindings[port] = []network.PortBinding{{HostIP: hostIP, HostPort: pStr}}
+		}
+		if pProtocol == "udp" || pProtocol == "both" {
+			port := network.MustParsePort(fmt.Sprintf("%d/udp", p.Port))
+			exposedPorts[port] = struct{}{}
+			portBindings[port] = []network.PortBinding{{HostIP: hostIP, HostPort: pStr}}
+		}
+	}
+
+	mounts := []mount.Mount{
+		{
+			Type:   mount.TypeBind,
+			Source: serverPath,
+			Target: "/data",
+		},
+	}
+
+	for _, vol := range template.Volumes {
+		hostPath := vol.Host
+		if !filepath.IsAbs(hostPath) {
+			hostPath = filepath.Join(serverPath, hostPath)
+		}
+		hostPath = filepath.Clean(hostPath)
+
+		readOnly := strings.ToLower(vol.Mode) == "ro"
+		mounts = append(mounts, mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   hostPath,
+			Target:   vol.Container,
+			ReadOnly: readOnly,
+		})
+	}
 
 	containerConfig := &container.Config{
-		Image: server.DockerImage,
-		Env:   envList,
-		ExposedPorts: network.PortSet{
-			tcpPort: {},
-			udpPort: {},
-		},
+		Image:        server.DockerImage,
+		Env:          envList,
+		ExposedPorts: exposedPorts,
 		Tty:          true,
 		OpenStdin:    true,
 		AttachStdin:  true,
@@ -299,24 +379,49 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 		AttachStderr: true,
 	}
 
+	if len(template.Entrypoint) > 0 {
+		containerConfig.Entrypoint = template.Entrypoint
+	}
+	if len(template.Cmd) > 0 {
+		containerConfig.Cmd = template.Cmd
+	}
+	if template.User != "" {
+		containerConfig.User = template.User
+	}
+	if template.StopSignal != "" {
+		containerConfig.StopSignal = template.StopSignal
+	}
+	if len(template.Labels) > 0 {
+		containerConfig.Labels = template.Labels
+	}
+
+	if template.HealthCheck != nil {
+		containerConfig.Healthcheck = &container.HealthConfig{
+			Test:          template.HealthCheck.Test,
+			Interval:      template.HealthCheck.Interval,
+			Timeout:       template.HealthCheck.Timeout,
+			Retries:       template.HealthCheck.Retries,
+			StartPeriod:   template.HealthCheck.StartPeriod,
+			StartInterval: 0,
+		}
+	}
+
 	hostConfig := &container.HostConfig{
-		PortBindings: network.PortMap{
-			tcpPort: []network.PortBinding{{HostIP: netip.MustParseAddr("0.0.0.0"), HostPort: portStr}},
-			udpPort: []network.PortBinding{{HostIP: netip.MustParseAddr("0.0.0.0"), HostPort: portStr}},
-		},
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeBind,
-				Source: serverPath,
-				Target: "/data",
-			},
-		},
+		PortBindings: portBindings,
+		Mounts:       mounts,
 		Resources: container.Resources{
 			Memory: int64(server.MemoryLimit) * 1024 * 1024,
 		},
 		RestartPolicy: container.RestartPolicy{
 			Name: container.RestartPolicyUnlessStopped,
 		},
+	}
+
+	if len(template.CapAdd) > 0 {
+		hostConfig.CapAdd = template.CapAdd
+	}
+	if template.NetworkMode != "" {
+		hostConfig.NetworkMode = container.NetworkMode(template.NetworkMode)
 	}
 
 	networkConfig := &network.NetworkingConfig{}
@@ -394,6 +499,7 @@ type UpdateServerRequest struct {
 	Name        string
 	MemoryLimit int
 	Port        int
+	CustomVars  map[string]string
 }
 
 func (s *ServerService) Update(id string, req UpdateServerRequest) error {
@@ -409,8 +515,9 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 	}
 
 	isRunning := server.Status == models.ServerStatusRunning
+	needsRestart := isRunning && (req.Port != server.Port || req.MemoryLimit != server.MemoryLimit || len(req.CustomVars) > 0)
 
-	if isRunning {
+	if needsRestart {
 		if err := s.Stop(id); err != nil {
 			return fmt.Errorf("failed to stop server: %w", err)
 		}
@@ -426,11 +533,15 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 	}
 	server.Environment = s.templates.EncodeEnvironment(env)
 
+	if req.CustomVars != nil {
+		server.CustomEnvironment = s.templates.EncodeEnvironment(req.CustomVars)
+	}
+
 	if err := s.db.Save(server).Error; err != nil {
 		return fmt.Errorf("failed to update server: %w", err)
 	}
 
-	if isRunning {
+	if needsRestart {
 		if err := s.Start(id); err != nil {
 			return fmt.Errorf("server updated but failed to restart: %w", err)
 		}
@@ -454,4 +565,69 @@ func (s *ServerService) ValidatePort(port int, excludeServerID string) error {
 func (s *ServerService) HasAccess(userID, serverID string) bool {
 	hasAccess, _ := s.UserHasAccess(userID, serverID)
 	return hasAccess
+}
+
+func (s *ServerService) IsTemplateOutdated(server *models.Server) bool {
+	template, ok := s.templates.Get(server.GameType)
+	if !ok {
+		return false
+	}
+	return server.TemplateVersion != template.Version
+}
+
+func (s *ServerService) GetTemplateVersion(gameType string) string {
+	template, ok := s.templates.Get(gameType)
+	if !ok {
+		return ""
+	}
+	return template.Version
+}
+
+func (s *ServerService) UpgradeTemplate(id string) error {
+	server, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+
+	template, ok := s.templates.Get(server.GameType)
+	if !ok {
+		return fmt.Errorf("unknown game type: %s", server.GameType)
+	}
+
+	if server.TemplateVersion == template.Version {
+		return nil
+	}
+
+	isRunning := server.Status == models.ServerStatusRunning
+	if isRunning {
+		if err := s.Stop(id); err != nil {
+			return fmt.Errorf("failed to stop server: %w", err)
+		}
+	}
+
+	if server.ContainerID != "" {
+		ctx := context.Background()
+		s.docker.ContainerRemove(ctx, server.ContainerID, client.ContainerRemoveOptions{Force: true})
+		server.ContainerID = ""
+	}
+
+	env := make(map[string]string)
+	for k, v := range template.Environment {
+		env[k] = strings.ReplaceAll(v, "{{MEMORY}}", strconv.Itoa(server.MemoryLimit))
+	}
+	server.Environment = s.templates.EncodeEnvironment(env)
+	server.DockerImage = template.DockerImage
+	server.TemplateVersion = template.Version
+
+	if err := s.db.Save(server).Error; err != nil {
+		return fmt.Errorf("failed to update server: %w", err)
+	}
+
+	if isRunning {
+		if err := s.Start(id); err != nil {
+			return fmt.Errorf("server upgraded but failed to restart: %w", err)
+		}
+	}
+
+	return nil
 }

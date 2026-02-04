@@ -16,21 +16,23 @@ const (
 )
 
 type Server struct {
-	ID          string           `gorm:"primarykey;size:36" json:"id"`
-	Name        string           `gorm:"not null" json:"name"`
-	GameType    string           `gorm:"not null" json:"game_type"`
-	DockerImage string           `gorm:"not null" json:"docker_image"`
-	ContainerID string           `json:"container_id"`
-	Port        int              `json:"port"`
-	MemoryLimit int              `json:"memory_limit"`
-	Status      ServerStatus     `gorm:"default:stopped" json:"status"`
-	Environment string           `gorm:"type:text" json:"-"`
-	CreatedAt   time.Time        `json:"created_at"`
-	UpdatedAt   time.Time        `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt   `gorm:"index" json:"-"`
-	Users       []User           `gorm:"many2many:server_users;" json:"-"`
-	Backups     []Backup         `gorm:"foreignKey:ServerID" json:"-"`
-	Schedules   []BackupSchedule `gorm:"foreignKey:ServerID" json:"-"`
+	ID                string           `gorm:"primarykey;size:36" json:"id"`
+	Name              string           `gorm:"not null" json:"name"`
+	GameType          string           `gorm:"not null" json:"game_type"`
+	DockerImage       string           `gorm:"not null" json:"docker_image"`
+	ContainerID       string           `json:"container_id"`
+	Port              int              `json:"port"`
+	MemoryLimit       int              `json:"memory_limit"`
+	Status            ServerStatus     `gorm:"default:stopped" json:"status"`
+	Environment       string           `gorm:"type:text" json:"-"`
+	CustomEnvironment string           `gorm:"type:text" json:"-"`
+	TemplateVersion   string           `json:"template_version"`
+	CreatedAt         time.Time        `json:"created_at"`
+	UpdatedAt         time.Time        `json:"updated_at"`
+	DeletedAt         gorm.DeletedAt   `gorm:"index" json:"-"`
+	Users             []User           `gorm:"many2many:server_users;" json:"-"`
+	Backups           []Backup         `gorm:"foreignKey:ServerID" json:"-"`
+	Schedules         []BackupSchedule `gorm:"foreignKey:ServerID" json:"-"`
 }
 
 func (s *Server) BeforeCreate(tx *gorm.DB) error {
