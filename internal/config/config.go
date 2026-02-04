@@ -34,8 +34,9 @@ type StorageConfig struct {
 }
 
 type DockerConfig struct {
-	Socket  string
-	Network string
+	Socket         string
+	Network        string
+	DataVolumeName string // Volume name for path translation when running in Docker
 }
 
 type SecurityConfig struct {
@@ -48,13 +49,9 @@ type SecurityConfig struct {
 }
 
 func Load() *Config {
-	var defaultBaseDir string
-	if runtime.GOOS == "windows" {
-		defaultBaseDir = filepath.Join(".", "data")
-	} else {
-		defaultBaseDir = "/var/lib/gs-panel"
-	}
-	baseDir := getEnv("GS_PANEL_DATA_DIR", defaultBaseDir)
+	// Single data directory - all paths derived from here
+	// Docker: /data, Native: ./data or /var/lib/gs-panel
+	baseDir := getEnv("GS_PANEL_DATA_DIR", "/data")
 
 	var defaultSocket string
 	if runtime.GOOS == "windows" {
@@ -63,7 +60,7 @@ func Load() *Config {
 		defaultSocket = "/var/run/docker.sock"
 	}
 
-	serversDir := getEnv("GS_PANEL_SERVERS_DIR", filepath.Join(baseDir, "servers"))
+	serversDir := filepath.Join(baseDir, "servers")
 
 	return &Config{
 		Server: ServerConfig{
@@ -71,22 +68,23 @@ func Load() *Config {
 			Port: getEnvInt("GS_PANEL_PORT", 8080),
 		},
 		Database: DatabaseConfig{
-			Path: getEnv("GS_PANEL_DB_PATH", filepath.Join(baseDir, "panel.db")),
+			Path: filepath.Join(baseDir, "panel.db"),
 		},
 		Storage: StorageConfig{
 			Servers:          serversDir,
-			Backups:          getEnv("GS_PANEL_BACKUPS_DIR", filepath.Join(baseDir, "backups")),
-			Logs:             getEnv("GS_PANEL_LOGS_DIR", filepath.Join(baseDir, "logs")),
-			DefaultTemplates: getEnv("GS_PANEL_DEFAULT_TEMPLATES_DIR", "./templates"),
-			UserTemplates:    getEnv("GS_PANEL_USER_TEMPLATES_DIR", filepath.Join(baseDir, "templates")),
+			Backups:          filepath.Join(baseDir, "backups"),
+			Logs:             filepath.Join(baseDir, "logs"),
+			DefaultTemplates: "./templates",
+			UserTemplates:    filepath.Join(baseDir, "templates"),
 		},
 		Docker: DockerConfig{
-			Socket:  getEnv("GS_PANEL_DOCKER_SOCKET", defaultSocket),
-			Network: getEnv("GS_PANEL_DOCKER_NETWORK", "gs-panel"),
+			Socket:         getEnv("GS_PANEL_DOCKER_SOCKET", defaultSocket),
+			Network:        getEnv("GS_PANEL_DOCKER_NETWORK", "gs-panel"),
+			DataVolumeName: getEnv("GS_PANEL_DATA_VOLUME", ""), // Auto-detect by default
 		},
 		Security: SecurityConfig{
-			AllowedMountPrefixes: getEnvList("GS_PANEL_ALLOWED_MOUNT_PREFIXES", []string{serversDir}),
-			AllowedCapAdds:       getEnvList("GS_PANEL_ALLOWED_CAP_ADDS", []string{"SYS_NICE", "NET_BIND_SERVICE"}),
+			AllowedMountPrefixes: []string{serversDir},
+			AllowedCapAdds:       []string{"SYS_NICE", "NET_BIND_SERVICE"},
 			EnableImageScanning:  getEnvBool("GS_PANEL_ENABLE_IMAGE_SCANNING", false),
 			Scanner:              getEnv("GS_PANEL_SCANNER", "trivy"),
 			VulnThreshold:        getEnv("GS_PANEL_VULN_THRESHOLD", "HIGH"),

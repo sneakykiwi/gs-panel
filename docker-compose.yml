@@ -12,12 +12,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./templates:/data/user-templates:ro
     environment:
-      - GS_PANEL_STORAGE_SERVERS=/data/servers
-      - GS_PANEL_STORAGE_BACKUPS=/data/backups
-      - GS_PANEL_STORAGE_LOGS=/data/logs
-      - GS_PANEL_STORAGE_DEFAULT_TEMPLATES=/data/templates
-      - GS_PANEL_STORAGE_USER_TEMPLATES=/data/user-templates
-      - GS_PANEL_DATABASE_PATH=/data/gs-panel.db
+      - GS_PANEL_DATA_DIR=/data
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
       interval: 30s

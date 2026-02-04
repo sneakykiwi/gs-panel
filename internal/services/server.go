@@ -89,6 +89,60 @@ func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, te
 	}
 }
 
+// getHostBasePath returns the host mountpoint for the Docker volume when running containerized.
+// This is needed because Docker bind mounts require host-side paths, not container-internal paths.
+// Returns empty string if not running in Docker (volume not found), meaning paths should be used as-is.
+func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
+	// Try to auto-detect the data volume if not explicitly set
+	volumeName := s.cfg.Docker.DataVolumeName
+	if volumeName == "" {
+		volumeName = "gs-panel-data" // Default volume name
+	}
+
+	logger.Debug().Str("volume", volumeName).Msg("Inspecting Docker volume for host mountpoint")
+	result, err := s.docker.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
+	if err != nil {
+		// Volume not found - assume we're running natively without Docker
+		logger.Debug().Str("volume", volumeName).Err(err).Msg("Docker volume not found, assuming native mode")
+		return "", nil
+	}
+
+	logger.Debug().Str("mountpoint", result.Volume.Mountpoint).Str("volume", volumeName).Msg("Found host mountpoint for volume")
+	return result.Volume.Mountpoint, nil
+}
+
+// translatePathForDocker converts container-internal paths to host paths when running in Docker.
+// Example: /data/servers/xxx -> /var/lib/docker/volumes/gs-panel-data/_data/servers/xxx
+func (s *ServerService) translatePathForDocker(ctx context.Context, containerPath string) (string, error) {
+	hostBase, err := s.getHostBasePath(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// If not running in Docker (no volume name set), return path as-is
+	if hostBase == "" {
+		return containerPath, nil
+	}
+
+	// Ensure the path starts with /data before translating
+	if !strings.HasPrefix(containerPath, "/data") {
+		logger.Warn().Str("path", containerPath).Msg("Path doesn't start with /data, skipping translation")
+		return containerPath, nil
+	}
+
+	// Remove /data prefix and join with host mountpoint
+	relativePath := strings.TrimPrefix(containerPath, "/data")
+	hostPath := filepath.Join(hostBase, relativePath)
+
+	logger.Debug().
+		Str("container_path", containerPath).
+		Str("host_path", hostPath).
+		Str("volume", s.cfg.Docker.DataVolumeName).
+		Msg("Translated container path to host path")
+
+	return hostPath, nil
+}
+
 func (s *ServerService) CheckImageExists(ctx context.Context, image string) (bool, error) {
 	_, err := s.docker.ImageInspect(ctx, image)
 	if err != nil {
@@ -691,10 +745,17 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 	backupPath := filepath.Join(serverPath, "../backups")
 	logsPath := filepath.Join(serverPath, "../logs")
 
+	// Translate container paths to host paths when running in Docker
+	// This is necessary because Docker bind mounts require host-side paths
+	serverHostPath, err := s.translatePathForDocker(ctx, serverPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to translate server path for Docker: %w", err)
+	}
+
 	mounts := []mount.Mount{
 		{
 			Type:   mount.TypeBind,
-			Source: serverPath,
+			Source: serverHostPath,
 			Target: "/data",
 		},
 	}
@@ -706,10 +767,16 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 		}
 		hostPath = filepath.Clean(hostPath)
 
+		// Translate path for Docker if needed
+		hostMountPath, err := s.translatePathForDocker(ctx, hostPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to translate volume path for Docker: %w", err)
+		}
+
 		readOnly := strings.ToLower(vol.Mode) == "ro"
 		mounts = append(mounts, mount.Mount{
 			Type:     mount.TypeBind,
-			Source:   hostPath,
+			Source:   hostMountPath,
 			Target:   vol.Container,
 			ReadOnly: readOnly,
 		})
