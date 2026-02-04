@@ -91,20 +91,23 @@ func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, te
 
 // getHostBasePath returns the host mountpoint for the Docker volume when running containerized.
 // This is needed because Docker bind mounts require host-side paths, not container-internal paths.
-// Returns empty string if not running in Docker (volume name not set), meaning paths should be used as-is.
+// Returns empty string if not running in Docker (volume not found), meaning paths should be used as-is.
 func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
-	if s.cfg.Docker.DataVolumeName == "" {
-		logger.Debug().Msg("Docker volume name not set, using container paths directly (native mode)")
+	// Try to auto-detect the data volume if not explicitly set
+	volumeName := s.cfg.Docker.DataVolumeName
+	if volumeName == "" {
+		volumeName = "gs-panel-data" // Default volume name
+	}
+
+	logger.Debug().Str("volume", volumeName).Msg("Inspecting Docker volume for host mountpoint")
+	result, err := s.docker.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
+	if err != nil {
+		// Volume not found - assume we're running natively without Docker
+		logger.Debug().Str("volume", volumeName).Err(err).Msg("Docker volume not found, assuming native mode")
 		return "", nil
 	}
 
-	logger.Debug().Str("volume", s.cfg.Docker.DataVolumeName).Msg("Inspecting Docker volume for host mountpoint")
-	result, err := s.docker.VolumeInspect(ctx, s.cfg.Docker.DataVolumeName, client.VolumeInspectOptions{})
-	if err != nil {
-		return "", fmt.Errorf("failed to inspect Docker volume '%s': %w. If not running in Docker, set GS_PANEL_DATA_VOLUME to empty string", s.cfg.Docker.DataVolumeName, err)
-	}
-
-	logger.Debug().Str("mountpoint", result.Volume.Mountpoint).Str("volume", s.cfg.Docker.DataVolumeName).Msg("Found host mountpoint for volume")
+	logger.Debug().Str("mountpoint", result.Volume.Mountpoint).Str("volume", volumeName).Msg("Found host mountpoint for volume")
 	return result.Volume.Mountpoint, nil
 }
 
