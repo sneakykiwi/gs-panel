@@ -85,7 +85,7 @@ func main() {
 		CookieSameSite: "Lax",
 		CookieSecure:   false,
 		CookieHTTPOnly: false, // Must be false so JS can read cookie for HTMX header
-		IdleTimeout:    1 * time.Hour,
+		IdleTimeout:    24 * time.Hour,
 		Extractor: extractors.Chain(
 			extractors.FromHeader("X-Csrf-Token"),
 			extractors.FromForm("csrf_token"),
