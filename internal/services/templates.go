@@ -340,3 +340,16 @@ func (s *TemplateService) DecodeEnvironment(data string) map[string]string {
 	}
 	return env
 }
+
+func (s *TemplateService) TemplateToYAML(t GameTemplate) string {
+	t.IsBuiltIn = false
+	data, err := yaml.Marshal(t)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func (s *TemplateService) ParseYAML(yamlContent string, t *GameTemplate) error {
+	return yaml.Unmarshal([]byte(yamlContent), t)
+}

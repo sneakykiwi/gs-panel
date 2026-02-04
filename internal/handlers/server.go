@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/sneakykiwi/gs-panel/internal/forms"
@@ -116,6 +117,97 @@ func parseEnvYAML(yaml string) map[string]string {
 		}
 	}
 	return result
+}
+
+func (h *ServerHandler) CreateAdvancedPage(c fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	templateID := c.Query("template")
+
+	if templateID == "" {
+		return c.Redirect().To("/servers/new")
+	}
+
+	template, ok := h.templateService.Get(templateID)
+	if !ok {
+		return c.Redirect().To("/servers/new")
+	}
+
+	yamlContent := h.templateService.TemplateToYAML(template)
+	return Render(c, servers.CreateAdvancedPage(user, template, yamlContent, ""))
+}
+
+func (h *ServerHandler) CreateAdvanced(c fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	sourceTemplateID := c.FormValue("source_template")
+
+	sourceTemplate, ok := h.templateService.Get(sourceTemplateID)
+	if !ok {
+		return c.Redirect().To("/servers/new")
+	}
+
+	serverName := c.FormValue("server_name")
+	templateID := c.FormValue("template_id")
+	yamlContent := c.FormValue("yaml_content")
+	memoryLimit := c.FormValue("memory_limit")
+	port := c.FormValue("port")
+	saveTemplate := c.FormValue("save_template") == "true"
+
+	if serverName == "" {
+		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Server name is required"))
+	}
+	if templateID == "" {
+		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Template ID is required"))
+	}
+
+	var template services.GameTemplate
+	if err := h.templateService.ParseYAML(yamlContent, &template); err != nil {
+		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Invalid YAML: "+err.Error()))
+	}
+
+	template.ID = templateID
+	template.IsBuiltIn = false
+
+	if template.DockerImage == "" {
+		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Docker image is required in template"))
+	}
+
+	if _, exists := h.templateService.Get(templateID); exists {
+		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Template ID already exists. Choose a different ID."))
+	}
+
+	if saveTemplate {
+		if err := h.templateService.Add(template); err != nil {
+			return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Failed to save template: "+err.Error()))
+		}
+		if err := h.templateService.SaveToFile(template); err != nil {
+			return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Template saved to memory but failed to save file: "+err.Error()))
+		}
+	} else {
+		if err := h.templateService.Add(template); err != nil {
+			return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Failed to register template: "+err.Error()))
+		}
+	}
+
+	var memLimit int
+	if memoryLimit != "" {
+		fmt.Sscanf(memoryLimit, "%d", &memLimit)
+	}
+	var serverPort int
+	if port != "" {
+		fmt.Sscanf(port, "%d", &serverPort)
+	}
+
+	_, err := h.serverService.Create(services.CreateServerRequest{
+		Name:        serverName,
+		GameType:    templateID,
+		MemoryLimit: memLimit,
+		Port:        serverPort,
+	})
+	if err != nil {
+		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Template saved but failed to create server: "+err.Error()))
+	}
+
+	return c.Redirect().To("/")
 }
 
 func (h *ServerHandler) View(c fiber.Ctx) error {

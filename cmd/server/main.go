@@ -129,6 +129,8 @@ func main() {
 	protected := app.Group("", middleware.Auth(authService))
 	protected.Get("/", serverHandler.Dashboard)
 	protected.Get("/servers/new", serverHandler.CreatePage)
+	protected.Get("/servers/new/advanced", serverHandler.CreateAdvancedPage)
+	protected.Post("/servers/new/advanced", serverHandler.CreateAdvanced)
 	protected.Post("/servers", serverHandler.Create)
 	protected.Get("/servers/:id", serverHandler.View)
 	protected.Get("/servers/:id/edit", serverHandler.EditPage)
