@@ -2,11 +2,26 @@ package servers
 
 import (
 	"fmt"
+	"encoding/json"
 	"github.com/sneakykiwi/gs-panel/internal/models"
 	"github.com/sneakykiwi/gs-panel/internal/services"
 	"github.com/sneakykiwi/gs-panel/views/components"
 	"github.com/sneakykiwi/gs-panel/views/layouts"
 )
+
+func templatesToJSON(templates []services.GameTemplate) string {
+	data := make(map[string]map[string]interface{})
+	for _, t := range templates {
+		data[t.ID] = map[string]interface{}{
+			"environment": t.Environment,
+			"var_descriptions": t.VarDescriptions,
+			"default_port": t.DefaultPort,
+			"default_memory": t.DefaultMemory,
+		}
+	}
+	b, _ := json.Marshal(data)
+	return string(b)
+}
 
 templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg string) {
 	@layouts.Base("Create Server", user) {
@@ -23,7 +38,12 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 						</div>
 					}
 
-					<form method="POST" action="/servers" class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+					<form
+						method="POST"
+						action="/servers"
+						class="bg-gray-800 rounded-lg p-6 border border-gray-700"
+						x-data={ fmt.Sprintf("{ selected: '', templates: %s }", templatesToJSON(templates)) }
+					>
 						<div class="mb-6">
 							<label class="block text-sm font-medium mb-2" for="name">Server Name</label>
 							<input type="text" id="name" name="name" required
@@ -31,7 +51,7 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 								placeholder="My Minecraft Server"/>
 						</div>
 
-						<div class="mb-6" x-data="{selected: ''}">
+						<div class="mb-6">
 							<label class="block text-sm font-medium mb-2">Game</label>
 							<div class="grid grid-cols-2 gap-3">
 								for _, t := range templates {
@@ -51,7 +71,7 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 							<label class="block text-sm font-medium mb-2" for="memory_limit">Memory Limit (MB)</label>
 							<input type="number" id="memory_limit" name="memory_limit" min="512" step="256"
 								class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-								placeholder="2048"/>
+								x-bind:placeholder="selected ? templates[selected].default_memory : '2048'"/>
 							<p class="text-sm text-gray-400 mt-1">Leave empty for game default</p>
 						</div>
 
@@ -59,9 +79,37 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 							<label class="block text-sm font-medium mb-2" for="port">Port</label>
 							<input type="number" id="port" name="port" min="1024" max="65535"
 								class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-								placeholder="Leave empty for game default"/>
+								x-bind:placeholder="selected ? templates[selected].default_port : 'Leave empty for game default'"/>
 							<p class="text-sm text-gray-400 mt-1">Leave empty for game default</p>
 						</div>
+
+						<template x-if="selected && templates[selected] && Object.keys(templates[selected].environment || {}).length > 0">
+							<div class="mb-6 border-t border-gray-700 pt-6">
+								<h3 class="text-lg font-medium mb-4">Game Settings</h3>
+								<div class="space-y-4">
+									<template x-for="(value, key) in templates[selected].environment" :key="key">
+										<div>
+											<label class="block text-sm font-medium mb-1">
+												<span x-text="key"></span>
+												<template x-if="templates[selected].var_descriptions && templates[selected].var_descriptions[key]">
+													<span class="text-gray-500 font-normal ml-2 cursor-help" x-bind:title="templates[selected].var_descriptions[key]">ⓘ</span>
+												</template>
+											</label>
+											<input
+												type="text"
+												x-bind:name="'env_' + key"
+												x-bind:placeholder="value"
+												class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
+											/>
+											<template x-if="templates[selected].var_descriptions && templates[selected].var_descriptions[key]">
+												<p class="text-gray-500 text-xs mt-1" x-text="templates[selected].var_descriptions[key]"></p>
+											</template>
+										</div>
+									</template>
+								</div>
+								<p class="text-sm text-gray-400 mt-4">Leave empty to use default values</p>
+							</div>
+						</template>
 
 						<div class="flex gap-4">
 							<button type="submit"

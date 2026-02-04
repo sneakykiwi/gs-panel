@@ -66,11 +66,20 @@ func (h *ServerHandler) Create(c fiber.Ctx) error {
 		return Render(c, servers.CreatePage(user, templates, errorMsg))
 	}
 
+	template, _ := h.templateService.Get(form.GameType)
+	customVars := make(map[string]string)
+	for key := range template.Environment {
+		if val := c.FormValue("env_" + key); val != "" {
+			customVars[key] = val
+		}
+	}
+
 	_, err := h.serverService.Create(services.CreateServerRequest{
 		Name:        form.Name,
 		GameType:    form.GameType,
 		MemoryLimit: form.MemoryLimit,
 		Port:        form.Port,
+		CustomVars:  customVars,
 	})
 	if err != nil {
 		return Render(c, servers.CreatePage(user, templates, err.Error()))

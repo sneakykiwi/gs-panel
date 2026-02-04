@@ -26,6 +26,7 @@ Templates are YAML files that define how a game server container should be creat
 | `stop_command` | string | - | Command to send via console for graceful stop |
 | `save_command` | string | - | Command to send via console to save before stop |
 | `stop_timeout` | int | `30` | Seconds to wait for graceful shutdown |
+| `var_descriptions` | map | `{}` | Descriptions for env vars (shown as tooltips in UI) |
 
 ### Advanced Fields
 
@@ -41,7 +42,6 @@ Templates are YAML files that define how a game server container should be creat
 | `network_mode` | string | Docker network mode |
 | `labels` | map | Container labels |
 | `stop_signal` | string | Signal to send for stop (e.g., `SIGTERM`) |
-| `var_descriptions` | map | Descriptions for env vars (shown in UI) |
 
 ### Additional Ports
 
