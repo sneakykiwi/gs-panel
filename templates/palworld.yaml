@@ -1,0 +1,16 @@
+id: palworld
+name: Palworld
+version: "1.0.0"
+docker_image: thijsvanloef/palworld-server-docker:latest
+default_port: 8211
+default_memory: 8192
+protocol: udp
+environment:
+  PLAYERS: "16"
+  MULTITHREADING: "true"
+  COMMUNITY: "false"
+stop_timeout: 30
+var_descriptions:
+  PLAYERS: "Maximum player count"
+  MULTITHREADING: "Enable multithreading"
+  COMMUNITY: "Show in community server list"

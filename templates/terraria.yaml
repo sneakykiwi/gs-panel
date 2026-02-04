@@ -1,0 +1,11 @@
+id: terraria
+name: Terraria
+version: "1.0.0"
+docker_image: ryshe/terraria:latest
+default_port: 7777
+default_memory: 1024
+protocol: tcp
+environment: {}
+stop_command: exit
+save_command: save
+stop_timeout: 30

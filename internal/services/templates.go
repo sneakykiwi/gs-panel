@@ -62,93 +62,6 @@ type GameTemplate struct {
 	IsBuiltIn       bool               `json:"-" yaml:"-"`
 }
 
-var defaultTemplates = []GameTemplate{
-	{
-		ID:            "minecraft-java",
-		Name:          "Minecraft: Java Edition",
-		Version:       "1.0.0",
-		DockerImage:   "itzg/minecraft-server:latest",
-		DefaultPort:   25565,
-		DefaultMemory: 2048,
-		Protocol:      "both",
-		Environment: map[string]string{
-			"EULA":       "TRUE",
-			"TYPE":       "VANILLA",
-			"MAX_MEMORY": "{{MEMORY}}M",
-		},
-		StopCommand: "stop",
-		SaveCommand: "save-all",
-		StopTimeout: 30,
-		IsBuiltIn:   true,
-	},
-	{
-		ID:            "minecraft-bedrock",
-		Name:          "Minecraft: Bedrock Edition",
-		Version:       "1.0.0",
-		DockerImage:   "itzg/minecraft-bedrock-server:latest",
-		DefaultPort:   19132,
-		DefaultMemory: 1024,
-		Protocol:      "udp",
-		Environment: map[string]string{
-			"EULA":       "TRUE",
-			"GAMEMODE":   "survival",
-			"DIFFICULTY": "normal",
-		},
-		StopCommand: "stop",
-		StopTimeout: 30,
-		IsBuiltIn:   true,
-	},
-	{
-		ID:            "terraria",
-		Name:          "Terraria",
-		Version:       "1.0.0",
-		DockerImage:   "ryshe/terraria:latest",
-		DefaultPort:   7777,
-		DefaultMemory: 1024,
-		Protocol:      "tcp",
-		Environment:   map[string]string{},
-		StopCommand:   "exit",
-		SaveCommand:   "save",
-		StopTimeout:   30,
-		IsBuiltIn:     true,
-	},
-	{
-		ID:            "valheim",
-		Name:          "Valheim",
-		Version:       "1.0.0",
-		DockerImage:   "lloesche/valheim-server:latest",
-		DefaultPort:   2456,
-		DefaultMemory: 4096,
-		Protocol:      "udp",
-		Environment: map[string]string{
-			"SERVER_NAME": "My Valheim Server",
-			"WORLD_NAME":  "Dedicated",
-			"SERVER_PASS": "secret",
-		},
-		AdditionalPorts: []PortConfig{
-			{Port: 2457, Protocol: "udp", Purpose: "query"},
-		},
-		StopTimeout: 30,
-		IsBuiltIn:   true,
-	},
-	{
-		ID:            "palworld",
-		Name:          "Palworld",
-		Version:       "1.0.0",
-		DockerImage:   "thijsvanloef/palworld-server-docker:latest",
-		DefaultPort:   8211,
-		DefaultMemory: 8192,
-		Protocol:      "udp",
-		Environment: map[string]string{
-			"PLAYERS":        "16",
-			"MULTITHREADING": "true",
-			"COMMUNITY":      "false",
-		},
-		StopTimeout: 30,
-		IsBuiltIn:   true,
-	},
-}
-
 var (
 	ErrTemplateNotFound  = fmt.Errorf("template not found")
 	ErrInvalidTemplate   = fmt.Errorf("invalid template")
@@ -164,13 +77,14 @@ type SecurityConfig struct {
 }
 
 type TemplateService struct {
-	templates    map[string]GameTemplate
-	templatesDir string
-	security     *SecurityConfig
-	mu           sync.RWMutex
+	templates           map[string]GameTemplate
+	defaultTemplatesDir string
+	userTemplatesDir    string
+	security            *SecurityConfig
+	mu                  sync.RWMutex
 }
 
-func NewTemplateService(templatesDir string, security *SecurityConfig) *TemplateService {
+func NewTemplateService(defaultTemplatesDir, userTemplatesDir string, security *SecurityConfig) *TemplateService {
 	if security == nil {
 		security = &SecurityConfig{
 			AllowedCapAdds: []string{"SYS_NICE", "NET_BIND_SERVICE"},
@@ -178,31 +92,27 @@ func NewTemplateService(templatesDir string, security *SecurityConfig) *Template
 	}
 
 	ts := &TemplateService{
-		templates:    make(map[string]GameTemplate),
-		templatesDir: templatesDir,
-		security:     security,
+		templates:           make(map[string]GameTemplate),
+		defaultTemplatesDir: defaultTemplatesDir,
+		userTemplatesDir:    userTemplatesDir,
+		security:            security,
 	}
 
-	for _, t := range defaultTemplates {
-		ts.templates[t.ID] = t
-	}
-
-	if templatesDir != "" {
-		ts.loadTemplatesFromDir()
-	}
+	ts.loadTemplatesFromDir(defaultTemplatesDir, true)
+	ts.loadTemplatesFromDir(userTemplatesDir, false)
 
 	return ts
 }
 
-func (s *TemplateService) loadTemplatesFromDir() {
-	if s.templatesDir == "" {
+func (s *TemplateService) loadTemplatesFromDir(dir string, isBuiltIn bool) {
+	if dir == "" {
 		return
 	}
 
-	entries, err := os.ReadDir(s.templatesDir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			logger.Error().Err(err).Str("dir", s.templatesDir).Msg("Failed to read templates directory")
+			logger.Error().Err(err).Str("dir", dir).Msg("Failed to read templates directory")
 		}
 		return
 	}
@@ -217,7 +127,7 @@ func (s *TemplateService) loadTemplatesFromDir() {
 			continue
 		}
 
-		filePath := filepath.Join(s.templatesDir, entry.Name())
+		filePath := filepath.Join(dir, entry.Name())
 		template, err := s.loadTemplateFile(filePath)
 		if err != nil {
 			logger.Error().Err(err).Str("file", filePath).Msg("Failed to load template file")
@@ -229,8 +139,9 @@ func (s *TemplateService) loadTemplatesFromDir() {
 			continue
 		}
 
+		template.IsBuiltIn = isBuiltIn
 		s.templates[template.ID] = template
-		logger.Info().Str("id", template.ID).Str("name", template.Name).Msg("Loaded template")
+		logger.Info().Str("id", template.ID).Str("name", template.Name).Bool("builtin", isBuiltIn).Msg("Loaded template")
 	}
 }
 
@@ -328,11 +239,8 @@ func (s *TemplateService) ReloadTemplates() error {
 	defer s.mu.Unlock()
 
 	s.templates = make(map[string]GameTemplate)
-	for _, t := range defaultTemplates {
-		s.templates[t.ID] = t
-	}
-
-	s.loadTemplatesFromDir()
+	s.loadTemplatesFromDir(s.defaultTemplatesDir, true)
+	s.loadTemplatesFromDir(s.userTemplatesDir, false)
 	return nil
 }
 
@@ -381,15 +289,15 @@ func (s *TemplateService) Delete(id string) error {
 }
 
 func (s *TemplateService) SaveToFile(t GameTemplate) error {
-	if s.templatesDir == "" {
-		return fmt.Errorf("templates directory not configured")
+	if s.userTemplatesDir == "" {
+		return fmt.Errorf("user templates directory not configured")
 	}
 
-	if err := os.MkdirAll(s.templatesDir, 0755); err != nil {
+	if err := os.MkdirAll(s.userTemplatesDir, 0755); err != nil {
 		return err
 	}
 
-	filePath := filepath.Join(s.templatesDir, t.ID+".yaml")
+	filePath := filepath.Join(s.userTemplatesDir, t.ID+".yaml")
 	data, err := yaml.Marshal(t)
 	if err != nil {
 		return err
@@ -399,12 +307,12 @@ func (s *TemplateService) SaveToFile(t GameTemplate) error {
 }
 
 func (s *TemplateService) DeleteFile(id string) error {
-	if s.templatesDir == "" {
-		return fmt.Errorf("templates directory not configured")
+	if s.userTemplatesDir == "" {
+		return fmt.Errorf("user templates directory not configured")
 	}
 
 	for _, ext := range []string{".yaml", ".yml", ".json"} {
-		filePath := filepath.Join(s.templatesDir, id+ext)
+		filePath := filepath.Join(s.userTemplatesDir, id+ext)
 		if _, err := os.Stat(filePath); err == nil {
 			return os.Remove(filePath)
 		}

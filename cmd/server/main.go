@@ -51,11 +51,15 @@ func main() {
 	defer dockerClient.Close()
 	logger.Info().Msg("Docker client connected")
 
-	templateService := services.NewTemplateService(cfg.Storage.Templates, &services.SecurityConfig{
-		AllowedMountPrefixes: cfg.Security.AllowedMountPrefixes,
-		AllowedCapAdds:       cfg.Security.AllowedCapAdds,
-		EnablePerUserMounts:  cfg.Security.EnablePerUserMounts,
-	})
+	templateService := services.NewTemplateService(
+		cfg.Storage.DefaultTemplates,
+		cfg.Storage.UserTemplates,
+		&services.SecurityConfig{
+			AllowedMountPrefixes: cfg.Security.AllowedMountPrefixes,
+			AllowedCapAdds:       cfg.Security.AllowedCapAdds,
+			EnablePerUserMounts:  cfg.Security.EnablePerUserMounts,
+		},
+	)
 	authService := services.NewAuthService(db)
 	consoleService := services.NewConsoleService(dockerClient)
 	logService := services.NewLogService(cfg.Storage.Servers, dockerClient)

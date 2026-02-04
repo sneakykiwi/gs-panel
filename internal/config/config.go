@@ -26,10 +26,11 @@ type DatabaseConfig struct {
 }
 
 type StorageConfig struct {
-	Servers   string
-	Backups   string
-	Logs      string
-	Templates string
+	Servers          string
+	Backups          string
+	Logs             string
+	DefaultTemplates string
+	UserTemplates    string
 }
 
 type DockerConfig struct {
@@ -73,10 +74,11 @@ func Load() *Config {
 			Path: getEnv("GS_PANEL_DB_PATH", filepath.Join(baseDir, "panel.db")),
 		},
 		Storage: StorageConfig{
-			Servers:   serversDir,
-			Backups:   getEnv("GS_PANEL_BACKUPS_DIR", filepath.Join(baseDir, "backups")),
-			Logs:      getEnv("GS_PANEL_LOGS_DIR", filepath.Join(baseDir, "logs")),
-			Templates: getEnv("GS_PANEL_TEMPLATES_DIR", filepath.Join(baseDir, "templates")),
+			Servers:          serversDir,
+			Backups:          getEnv("GS_PANEL_BACKUPS_DIR", filepath.Join(baseDir, "backups")),
+			Logs:             getEnv("GS_PANEL_LOGS_DIR", filepath.Join(baseDir, "logs")),
+			DefaultTemplates: getEnv("GS_PANEL_DEFAULT_TEMPLATES_DIR", "./templates"),
+			UserTemplates:    getEnv("GS_PANEL_USER_TEMPLATES_DIR", filepath.Join(baseDir, "templates")),
 		},
 		Docker: DockerConfig{
 			Socket:  getEnv("GS_PANEL_DOCKER_SOCKET", defaultSocket),
