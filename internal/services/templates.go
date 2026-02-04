@@ -205,6 +205,13 @@ func (s *TemplateService) ValidateTemplate(t *GameTemplate, serverPath string) e
 			return fmt.Errorf("%w: %s", ErrInvalidMountPath, vol.Host)
 		}
 
+		// Security: Path traversal mitigation
+		// Order of operations is critical here:
+		// 1. Join relative paths with serverPath to get a full path
+		// 2. Clean resolves ".." and "." segments, converting "../../etc" to an absolute path
+		// 3. Validate the cleaned path against allowed prefixes
+		// This ensures that path traversal attempts like "data/../../../etc/passwd"
+		// are resolved to their actual target path before the prefix check.
 		hostPath := vol.Host
 		if !filepath.IsAbs(hostPath) {
 			hostPath = filepath.Join(serverPath, hostPath)
@@ -288,6 +295,28 @@ func (s *TemplateService) Add(t GameTemplate) error {
 	return nil
 }
 
+func (s *TemplateService) AddWithUniqueID(t GameTemplate) (GameTemplate, error) {
+	if err := s.validateTemplateFields(&t); err != nil {
+		return t, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	baseID := t.ID
+	counter := 1
+	for {
+		if _, exists := s.templates[t.ID]; !exists {
+			break
+		}
+		t.ID = fmt.Sprintf("%s-%d", baseID, counter)
+		counter++
+	}
+
+	s.templates[t.ID] = t
+	return t, nil
+}
+
 func (s *TemplateService) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -307,6 +336,14 @@ func (s *TemplateService) Delete(id string) error {
 func (s *TemplateService) SaveToFile(t GameTemplate) error {
 	if s.userTemplatesDir == "" {
 		return fmt.Errorf("user templates directory not configured")
+	}
+
+	// prevent path traversal (e.g., "../../../etc/passwd")
+	if !templateIDRegex.MatchString(t.ID) {
+		return fmt.Errorf("%w: template ID contains invalid characters", ErrInvalidTemplateID)
+	}
+	if len(t.ID) > 64 {
+		return fmt.Errorf("%w: template ID must not exceed 64 characters", ErrInvalidTemplateID)
 	}
 
 	if err := os.MkdirAll(s.userTemplatesDir, 0755); err != nil {
@@ -334,11 +371,15 @@ func (s *TemplateService) DeleteFile(id string) error {
 		}
 	}
 
-	return nil
+	return fmt.Errorf("no template file found for id: %s", id)
 }
 
 func (s *TemplateService) EncodeEnvironment(env map[string]string) string {
-	data, _ := json.Marshal(env)
+	data, err := json.Marshal(env)
+	if err != nil {
+		logger.Warn().Err(err).Msg("Failed to marshal environment variables")
+		return "{}"
+	}
 	return string(data)
 }
 

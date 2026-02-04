@@ -177,46 +177,40 @@ func (h *ServerHandler) CreateAdvanced(c fiber.Ctx) error {
 		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Docker image is required in template"))
 	}
 
-	// SECURITY: Validate template against security policies (volumes and capabilities)
-	// This prevents non-admin users from creating templates with dangerous mount points or capabilities
-	// We validate against a temporary server path since the actual server doesn't exist yet
 	tempServerPath := filepath.Join(h.cfg.Storage.Servers, "validation-temp")
 	if err := h.templateService.ValidateTemplate(&template, tempServerPath); err != nil {
 		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent,
 			fmt.Sprintf("Security validation failed: %s. Contact an administrator if you need additional capabilities or mount permissions.", err.Error())))
 	}
 
-	// If template ID already exists, append a number to make it unique
-	baseID := template.ID
-	counter := 1
-	for {
-		if _, exists := h.templateService.Get(template.ID); !exists {
-			break
-		}
-		template.ID = fmt.Sprintf("%s-%d", baseID, counter)
-		counter++
-	}
-
 	if saveTemplate {
-		if err := h.templateService.Add(template); err != nil {
+		var err error
+		template, err = h.templateService.AddWithUniqueID(template)
+		if err != nil {
 			return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Failed to save template: "+err.Error()))
 		}
 		if err := h.templateService.SaveToFile(template); err != nil {
 			return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Template saved to memory but failed to save file: "+err.Error()))
 		}
 	} else {
-		if err := h.templateService.Add(template); err != nil {
+		var err error
+		template, err = h.templateService.AddWithUniqueID(template)
+		if err != nil {
 			return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Failed to register template: "+err.Error()))
 		}
 	}
 
 	var memLimit int
 	if memoryLimit != "" {
-		fmt.Sscanf(memoryLimit, "%d", &memLimit)
+		if _, err := fmt.Sscanf(memoryLimit, "%d", &memLimit); err != nil {
+			return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Invalid memory limit: must be a number"))
+		}
 	}
 	var serverPort int
 	if port != "" {
-		fmt.Sscanf(port, "%d", &serverPort)
+		if _, err := fmt.Sscanf(port, "%d", &serverPort); err != nil {
+			return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Invalid port: must be a number"))
+		}
 	}
 
 	_, err := h.serverService.Create(services.CreateServerRequest{

@@ -727,11 +727,11 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 		env[k] = v
 	}
 
-  if server.CustomEnvironment != "" {
-      for k, v := range s.templates.DecodeEnvironment(server.CustomEnvironment) {
-          env[k] = v
-      }
-  }
+	if server.CustomEnvironment != "" {
+		for k, v := range s.templates.DecodeEnvironment(server.CustomEnvironment) {
+			env[k] = v
+		}
+	}
 	server.Environment = s.templates.EncodeEnvironment(env)
 	server.DockerImage = template.DockerImage
 	server.TemplateVersion = template.Version
@@ -767,17 +767,38 @@ func (s *ServerService) GetAllUsedPorts(excludeServerID string) (map[int]struct{
 	if err != nil {
 		return nil, err
 	}
+
+	templateCache := make(map[string]GameTemplate)
+
 	for _, srv := range servers {
 		if srv.ID == excludeServerID {
 			continue
 		}
-		template, ok := s.GetServerTemplate(&srv)
+
+		used[srv.Port] = struct{}{}
+
+		var template GameTemplate
+		var ok bool
+
+		if srv.TemplateConfig != "" {
+			if err := json.Unmarshal([]byte(srv.TemplateConfig), &template); err == nil {
+				ok = true
+			}
+		} else {
+			if cached, found := templateCache[srv.GameType]; found {
+				template = cached
+				ok = true
+			} else if template, ok = s.templates.Get(srv.GameType); ok {
+				templateCache[srv.GameType] = template
+			}
+		}
+
 		if !ok {
 			continue
 		}
-		ports := s.GetPortsFromTemplate(template, srv.Port)
-		for _, p := range ports {
-			used[p] = struct{}{}
+
+		for _, p := range template.AdditionalPorts {
+			used[p.Port] = struct{}{}
 		}
 	}
 	return used, nil
