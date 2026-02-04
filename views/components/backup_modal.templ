@@ -31,6 +31,7 @@ templ BackupCreateModal(serverID string) {
 					x-data="{ submitting: false }"
 					@submit="submitting = true"
 				>
+					@CsrfToken()
 					<div class="mb-4">
 						<label class="block text-sm font-medium mb-2">Backup Name</label>
 						<input 

@@ -27,6 +27,7 @@ templ ViewPage(server *models.Server, user *models.User, isOutdated bool, newVer
 							</p>
 						</div>
 						<form method="POST" action={ templ.URL("/servers/" + server.ID + "/upgrade") }>
+							@components.CsrfToken()
 							<button
 								type="submit"
 								class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm transition"

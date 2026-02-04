@@ -2,11 +2,6 @@
 
 A lightweight, self-hosted game server management panel built with Go + HTMX.
 
-- **Single binary** - One executable, no dependencies
-- **SQLite database** - No external database to configure
-- **~50MB RAM** - Runs on a Raspberry Pi
-- **Simple Docker** - One container, volume mounts
-
 ## Quick Start
 
 ### Docker (Recommended)

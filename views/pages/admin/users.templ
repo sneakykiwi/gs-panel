@@ -75,6 +75,7 @@ templ ResetPasswordModal() {
 			<h2 class="text-xl font-bold mb-4">Reset Password</h2>
 			<p class="text-gray-400 mb-4">Reset password for: <span id="reset-user-email" class="text-white font-medium"></span></p>
 			<form id="reset-password-form" hx-swap="none" hx-on::after-request="location.reload()">
+				@components.CsrfToken()
 				<input type="hidden" name="user_id" id="reset-user-id"/>
 				<div class="mb-4">
 					<label class="block text-sm font-medium mb-2">New Password</label>

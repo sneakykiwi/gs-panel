@@ -35,6 +35,7 @@ templ EditForm(server *models.Server, errors map[string]string, templateEnv map[
 			hx-swap="outerHTML"
 			class="bg-gray-800 rounded-lg p-6 border border-gray-700"
 		>
+			@components.CsrfToken()
 			if errors != nil && errors["_general"] != "" {
 				<div class="mb-6 bg-red-500/20 border border-red-500 text-red-300 px-4 py-3 rounded">
 					{ errors["_general"] }

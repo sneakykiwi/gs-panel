@@ -24,6 +24,7 @@ templ TemplatesPage(user *models.User, templates []services.GameTemplate) {
 							+ New Template
 						</a>
 						<form method="POST" action="/admin/templates/reload" class="inline">
+							@components.CsrfToken()
 							<button
 								type="submit"
 								class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded transition"
@@ -71,6 +72,7 @@ templ TemplatesPage(user *models.User, templates []services.GameTemplate) {
 										Edit
 									</a>
 									<form method="POST" action={ templ.URL("/admin/templates/" + t.ID + "/delete") } class="flex-1">
+										@components.CsrfToken()
 										<button
 											type="submit"
 											class="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-sm transition"

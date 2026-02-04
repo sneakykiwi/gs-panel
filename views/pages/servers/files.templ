@@ -170,6 +170,7 @@ templ RenameModal(serverID string) {
 		<div class="bg-gray-800 rounded-lg p-6 w-full max-w-md">
 			<h2 class="text-xl font-bold mb-4">Rename</h2>
 			<form hx-post={ "/servers/" + serverID + "/files/rename" } hx-swap="none" hx-on::after-request="location.reload()">
+				@components.CsrfToken()
 				<input type="hidden" name="old_path" id="rename-old-path"/>
 				<div class="mb-4">
 					<label class="block text-sm font-medium mb-2">New Name</label>

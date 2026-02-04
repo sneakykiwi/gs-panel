@@ -53,6 +53,7 @@ templ CreateAdvancedPage(user *models.User, template services.GameTemplate, yaml
 				<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 					<div class="lg:col-span-2">
 						<form id="advanced-form" method="POST" action="/servers/new/advanced" class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+							@components.CsrfToken()
 							<input type="hidden" name="source_template" value={ template.ID }/>
 
 							<div class="grid grid-cols-2 gap-4 mb-6">
