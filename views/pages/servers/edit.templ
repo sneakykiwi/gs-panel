@@ -7,7 +7,7 @@ import (
 	"strconv"
 )
 
-templ EditPage(server *models.Server, user *models.User, errors map[string]string) {
+templ EditPage(server *models.Server, user *models.User, errors map[string]string, templateEnv map[string]string, customEnv map[string]string, varDescriptions map[string]string) {
 	@layouts.Base("Edit Server - " + server.Name, user) {
 		<div class="flex h-screen">
 			@components.Sidebar(user)
@@ -21,13 +21,13 @@ templ EditPage(server *models.Server, user *models.User, errors map[string]strin
 				
 				<h1 class="text-3xl font-bold mb-8">Edit Server</h1>
 				
-				@EditForm(server, errors)
+				@EditForm(server, errors, templateEnv, customEnv, varDescriptions)
 			</main>
 		</div>
 	}
 }
 
-templ EditForm(server *models.Server, errors map[string]string) {
+templ EditForm(server *models.Server, errors map[string]string, templateEnv map[string]string, customEnv map[string]string, varDescriptions map[string]string) {
 	<div class="max-w-2xl" id="edit-form-container">
 		<form 
 			hx-put={ "/servers/" + server.ID }
@@ -41,7 +41,6 @@ templ EditForm(server *models.Server, errors map[string]string) {
 				</div>
 			}
 			
-			<!-- Server Name -->
 			<div class="mb-6">
 				<label for="name" class="block text-sm font-medium mb-2">
 					Server Name
@@ -62,7 +61,6 @@ templ EditForm(server *models.Server, errors map[string]string) {
 				}
 			</div>
 			
-			<!-- Memory Limit -->
 			<div class="mb-6">
 				<label for="memory_limit" class="block text-sm font-medium mb-2">
 					Memory Limit (MB)
@@ -84,7 +82,6 @@ templ EditForm(server *models.Server, errors map[string]string) {
 				<p class="text-gray-400 text-sm mt-1">Recommended: 2048 MB for most game servers</p>
 			</div>
 			
-			<!-- Port -->
 			<div class="mb-6">
 				<label for="port" class="block text-sm font-medium mb-2">
 					Server Port
@@ -105,7 +102,53 @@ templ EditForm(server *models.Server, errors map[string]string) {
 				}
 			</div>
 			
-			<!-- Warning -->
+			if len(templateEnv) > 0 {
+				<div class="mb-6" x-data="{ open: false }">
+					<button
+						type="button"
+						@click="open = !open"
+						class="flex items-center justify-between w-full px-4 py-3 bg-gray-700 rounded border border-gray-600 hover:border-gray-500 transition"
+					>
+						<span class="font-medium">Advanced Settings</span>
+						<svg
+							class="w-5 h-5 transition-transform"
+							:class="{ 'rotate-180': open }"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+						</svg>
+					</button>
+
+					<div x-show="open" x-cloak class="mt-4 space-y-4 border-l-2 border-gray-600 pl-4">
+						<p class="text-sm text-gray-400">
+							Override template environment variables. Leave empty to use defaults.
+						</p>
+						for key, defaultVal := range templateEnv {
+							<div>
+								<label class="block text-sm font-medium mb-1">
+									{ key }
+									if varDescriptions != nil && varDescriptions[key] != "" {
+										<span class="text-gray-500 font-normal ml-2" title={ varDescriptions[key] }>ⓘ</span>
+									}
+								</label>
+								<input
+									type="text"
+									name={ "env_" + key }
+									value={ getEnvValue(customEnv, key) }
+									placeholder={ defaultVal }
+									class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+								/>
+								if varDescriptions != nil && varDescriptions[key] != "" {
+									<p class="text-gray-500 text-xs mt-1">{ varDescriptions[key] }</p>
+								}
+							</div>
+						}
+					</div>
+				</div>
+			}
+
 			if server.Status == models.ServerStatusRunning {
 				<div class="mb-6 bg-yellow-500/20 border border-yellow-500 text-yellow-300 px-4 py-3 rounded">
 					<p class="font-medium">⚠️ Server is Running</p>
@@ -113,7 +156,6 @@ templ EditForm(server *models.Server, errors map[string]string) {
 				</div>
 			}
 			
-			<!-- Actions -->
 			<div class="flex gap-3">
 				<button 
 					type="submit"
@@ -131,6 +173,13 @@ templ EditForm(server *models.Server, errors map[string]string) {
 			</div>
 		</form>
 	</div>
+}
+
+func getEnvValue(customEnv map[string]string, key string) string {
+	if customEnv == nil {
+		return ""
+	}
+	return customEnv[key]
 }
 
 func inputBorderClass(errors map[string]string, field string) string {

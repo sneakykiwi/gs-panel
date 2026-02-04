@@ -86,7 +86,9 @@ func (h *ServerHandler) View(c fiber.Ctx) error {
 	}
 
 	user := middleware.GetUser(c)
-	return Render(c, servers.ViewPage(server, user))
+	isOutdated := h.serverService.IsTemplateOutdated(server)
+	newVersion := h.serverService.GetTemplateVersion(server.GameType)
+	return Render(c, servers.ViewPage(server, user, isOutdated, newVersion))
 }
 
 func (h *ServerHandler) Delete(c fiber.Ctx) error {
@@ -201,7 +203,9 @@ func (h *ServerHandler) EditPage(c fiber.Ctx) error {
 		return fiber.ErrForbidden
 	}
 
-	return Render(c, servers.EditPage(server, user, nil))
+	template, _ := h.templateService.Get(server.GameType)
+	customEnv := h.templateService.DecodeEnvironment(server.CustomEnvironment)
+	return Render(c, servers.EditPage(server, user, nil, template.Environment, customEnv, template.VarDescriptions))
 }
 
 func (h *ServerHandler) Update(c fiber.Ctx) error {
@@ -217,28 +221,39 @@ func (h *ServerHandler) Update(c fiber.Ctx) error {
 		return fiber.ErrForbidden
 	}
 
+	template, _ := h.templateService.Get(server.GameType)
+	currentCustomEnv := h.templateService.DecodeEnvironment(server.CustomEnvironment)
+
 	var form forms.UpdateServer
 	if err := c.Bind().Form(&form); err != nil {
-		errors := map[string]string{"_general": "Invalid form data"}
-		return Render(c, servers.EditForm(server, errors), fiber.StatusBadRequest)
+		formErrors := map[string]string{"_general": "Invalid form data"}
+		return Render(c, servers.EditForm(server, formErrors, template.Environment, currentCustomEnv, template.VarDescriptions), fiber.StatusBadRequest)
 	}
 
 	validator := validators.NewServerUpdateValidator(h.serverService)
-	errors := validator.Validate(form, server)
+	formErrors := validator.Validate(form, server)
 
-	if len(errors) > 0 {
-		return Render(c, servers.EditForm(server, errors), fiber.StatusBadRequest)
+	if len(formErrors) > 0 {
+		return Render(c, servers.EditForm(server, formErrors, template.Environment, currentCustomEnv, template.VarDescriptions), fiber.StatusBadRequest)
+	}
+
+	customVars := make(map[string]string)
+	for key := range template.Environment {
+		if val := c.FormValue("env_" + key); val != "" {
+			customVars[key] = val
+		}
 	}
 
 	req := services.UpdateServerRequest{
 		Name:        form.Name,
 		MemoryLimit: form.MemoryLimit,
 		Port:        form.Port,
+		CustomVars:  customVars,
 	}
 
 	if err := h.serverService.Update(serverID, req); err != nil {
-		errors["_general"] = "Failed to update server: " + err.Error()
-		return Render(c, servers.EditForm(server, errors), fiber.StatusInternalServerError)
+		updateErrors := map[string]string{"_general": "Failed to update server: " + err.Error()}
+		return Render(c, servers.EditForm(server, updateErrors, template.Environment, currentCustomEnv, template.VarDescriptions), fiber.StatusInternalServerError)
 	}
 
 	c.Set("X-Success-Message", "Server updated successfully")
