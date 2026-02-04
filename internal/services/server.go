@@ -653,7 +653,9 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 
 	if server.ContainerID != "" {
 		ctx := context.Background()
-		s.docker.ContainerRemove(ctx, server.ContainerID, client.ContainerRemoveOptions{Force: true})
+		if err := s.docker.ContainerRemove(ctx, server.ContainerID, client.ContainerRemoveOptions{Force: true}); err != nil {
+			return fmt.Errorf("failed to remove container: %w", err)
+		}
 		server.ContainerID = ""
 	}
 
