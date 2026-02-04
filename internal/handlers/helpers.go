@@ -5,6 +5,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/csrf"
 )
 
 // CsrfTokenKey is the context key for CSRF token
@@ -20,7 +21,7 @@ func Render(c fiber.Ctx, component templ.Component, status ...int) error {
 
 	// Inject CSRF token into template context
 	ctx := c.Context()
-	if token, ok := c.Locals(CsrfTokenKey).(string); ok {
+	if token := csrf.TokenFromContext(c); token != "" {
 		ctx = context.WithValue(ctx, CsrfTokenKey, token)
 	}
 
