@@ -653,7 +653,7 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 
 	if server.ContainerID != "" {
 		ctx := context.Background()
-		if err := s.docker.ContainerRemove(ctx, server.ContainerID, client.ContainerRemoveOptions{Force: true}); err != nil {
+		if _, err := s.docker.ContainerRemove(ctx, server.ContainerID, client.ContainerRemoveOptions{Force: true}); err != nil {
 			return fmt.Errorf("failed to remove container: %w", err)
 		}
 		server.ContainerID = ""
@@ -670,10 +670,9 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 
 	// Preserve and re-apply any custom environment overrides when upgrading the template.
 	if server.CustomEnvironment != "" {
-		if customEnv, err := s.templates.DecodeEnvironment(server.CustomEnvironment); err == nil {
-			for k, v := range customEnv {
-				env[k] = v
-			}
+		customEnv := s.templates.DecodeEnvironment(server.CustomEnvironment)
+		for k, v := range customEnv {
+			env[k] = v
 		}
 	}
 	server.Environment = s.templates.EncodeEnvironment(env)
