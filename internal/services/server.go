@@ -112,12 +112,19 @@ func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
 			continue
 		}
 
-		destination := fields[9] // mount destination in container
-		source := fields[8]      // host-side source path
-
+		destination := fields[4] // mount destination in container
 		if destination == "/data" {
-			logger.Info().Str("host_base_path", source).Msg("Successfully detected host path for /data")
-			return source, nil
+			// Find the index of the separator "-"
+			for j := 5; j < len(fields); j++ {
+				if fields[j] == "-" {
+					if j+2 < len(fields) {
+						source := fields[j+2]
+						logger.Info().Str("host_base_path", source).Msg("Successfully detected host path for /data")
+						return source, nil
+					}
+					break
+				}
+			}
 		}
 	}
 
@@ -137,6 +144,9 @@ func (s *ServerService) translatePathForDocker(ctx context.Context, containerPat
 	}
 
 	relativePath := strings.TrimPrefix(containerPath, "/data")
+	if relativePath != "" && !strings.HasPrefix(relativePath, "/") {
+		relativePath = "/" + relativePath
+	}
 	hostPath := filepath.Join(hostBase, relativePath)
 
 	logger.Info().
