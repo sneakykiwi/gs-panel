@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -258,6 +259,12 @@ func (s *TemplateService) List() []GameTemplate {
 	for _, t := range s.templates {
 		result = append(result, t)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].IsBuiltIn != result[j].IsBuiltIn {
+			return result[i].IsBuiltIn
+		}
+		return result[i].Name < result[j].Name
+	})
 	return result
 }
 
