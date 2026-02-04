@@ -727,11 +727,11 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 		env[k] = v
 	}
 
-	if server.CustomEnvironment != "" {
-		for k, v := range s.templates.DecodeEnvironment(server.CustomEnvironment) {
-			env[k] = v
-		}
-	}
+  if server.CustomEnvironment != "" {
+      for k, v := range s.templates.DecodeEnvironment(server.CustomEnvironment) {
+          env[k] = v
+      }
+  }
 	server.Environment = s.templates.EncodeEnvironment(env)
 	server.DockerImage = template.DockerImage
 	server.TemplateVersion = template.Version
