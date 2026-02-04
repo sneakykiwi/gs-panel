@@ -412,6 +412,9 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 		}
 	}
 
+	backupPath := filepath.Join(serverPath, "../backups")
+	logsPath := filepath.Join(serverPath, "../logs")
+
 	mounts := []mount.Mount{
 		{
 			Type:   mount.TypeBind,
@@ -421,7 +424,7 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 	}
 
 	for _, vol := range template.Volumes {
-		hostPath := vol.Host
+		hostPath := ReplaceTemplateVars(vol.Host, server.ID, server.Name, serverPath, backupPath, logsPath, server.MemoryLimit, server.Port)
 		if !filepath.IsAbs(hostPath) {
 			hostPath = filepath.Join(serverPath, hostPath)
 		}

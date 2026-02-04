@@ -40,14 +40,17 @@ Templates define how game server containers are created and managed.
 
 ## Variables
 
-Use these placeholders in environment values:
+Use these placeholders in environment values and volume mounts:
 
-| Variable | Description |
-|----------|-------------|
-| `{{MEMORY}}` | Memory limit (MB) |
-| `{{PORT}}` | Server port |
-| `{{SERVER_ID}}` | Server UUID |
-| `{{SERVER_NAME}}` | Server name |
+| Variable         | Description                          |
+|------------------|--------------------------------------|
+| `{{MEMORY}}`     | Memory limit (MB)                    |
+| `{{PORT}}`       | Server port                          |
+| `{{SERVER_ID}}`  | Server UUID                          |
+| `{{SERVER_NAME}}`| Server name                          |
+| `{{SERVER_DIR}}` | Server data directory path           |
+| `{{BACKUP_DIR}}` | Server backup directory path (opt.)  |
+| `{{LOGS_DIR}}`   | Server logs directory path (opt.)    |
 
 ## Example
 
@@ -63,6 +66,16 @@ protocol: udp
 environment:
   SERVER_NAME: "{{SERVER_NAME}}"
   MAX_MEMORY: "{{MEMORY}}M"
+
+# Volumes can use either object or short syntax:
+volumes:
+  # Short syntax
+  - "{{SERVER_DIR}}:/config"
+  - "{{BACKUP_DIR}}:/backups:ro"
+  # Object syntax
+  - host: "{{LOGS_DIR}}"
+    container: "/logs"
+    mode: rw
 
 stop_command: quit
 save_command: save

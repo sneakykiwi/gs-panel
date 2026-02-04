@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,39 @@ type VolumeConfig struct {
 	Host      string `json:"host" yaml:"host"`
 	Container string `json:"container" yaml:"container"`
 	Mode      string `json:"mode" yaml:"mode"`
+}
+
+func (v *VolumeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var str string
+	if err := unmarshal(&str); err == nil {
+		parts := strings.Split(str, ":")
+		if len(parts) >= 2 {
+			v.Host = parts[0]
+			v.Container = parts[1]
+			v.Mode = "rw"
+			if len(parts) == 3 {
+				v.Mode = parts[2]
+			}
+			return nil
+		}
+		return fmt.Errorf("invalid volume format: %s", str)
+	}
+
+	var obj struct {
+		Host      string `yaml:"host"`
+		Container string `yaml:"container"`
+		Mode      string `yaml:"mode"`
+	}
+	if err := unmarshal(&obj); err != nil {
+		return err
+	}
+	v.Host = obj.Host
+	v.Container = obj.Container
+	v.Mode = obj.Mode
+	if v.Mode == "" {
+		v.Mode = "rw"
+	}
+	return nil
 }
 
 type HealthCheckConfig struct {
@@ -69,7 +103,7 @@ var (
 	ErrInvalidMountPath  = fmt.Errorf("invalid mount path")
 	ErrInvalidCapability = fmt.Errorf("invalid capability")
 	ErrInvalidTemplateID = fmt.Errorf("invalid template ID")
-	mountPathRegex       = regexp.MustCompile(`^[a-zA-Z0-9_/.-]+$`)
+	mountPathRegex       = regexp.MustCompile(`^[a-zA-Z0-9_\\/.:-]+$`)
 	templateIDRegex      = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 )
 
@@ -155,19 +189,33 @@ func (s *TemplateService) loadTemplateFile(filePath string) (GameTemplate, error
 	}
 
 	var template GameTemplate
+	var raw map[string]interface{}
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	switch ext {
 	case ".yaml", ".yml":
 		err = yaml.Unmarshal(data, &template)
+		if err == nil {
+			err = yaml.Unmarshal(data, &raw)
+		}
 	case ".json":
 		err = json.Unmarshal(data, &template)
+		if err == nil {
+			err = json.Unmarshal(data, &raw)
+		}
 	default:
 		return GameTemplate{}, fmt.Errorf("unsupported format: %s", ext)
 	}
 
 	if err != nil {
 		return GameTemplate{}, err
+	}
+
+	// Parse volumes using helper if present
+	if raw != nil {
+		if v, ok := raw["volumes"]; ok {
+			template.Volumes = ParseVolumes(v)
+		}
 	}
 
 	return template, nil
@@ -199,24 +247,72 @@ func (s *TemplateService) validateTemplateFields(t *GameTemplate) error {
 	return nil
 }
 
-func (s *TemplateService) ValidateTemplate(t *GameTemplate, serverPath string) error {
-	for _, vol := range t.Volumes {
-		if !mountPathRegex.MatchString(vol.Host) || !mountPathRegex.MatchString(vol.Container) {
-			return fmt.Errorf("%w: %s", ErrInvalidMountPath, vol.Host)
-		}
+// Template variable replacement helper
+func ReplaceTemplateVars(input, serverID, serverName, serverPath, backupPath, logsPath string, memory, port int) string {
+	input = strings.ReplaceAll(input, "{{SERVER_ID}}", serverID)
+	input = strings.ReplaceAll(input, "{{SERVER_NAME}}", serverName)
+	input = strings.ReplaceAll(input, "{{SERVER_DIR}}", serverPath)
+	input = strings.ReplaceAll(input, "{{BACKUP_DIR}}", backupPath)
+	input = strings.ReplaceAll(input, "{{LOGS_DIR}}", logsPath)
+	input = strings.ReplaceAll(input, "{{MEMORY}}", strconv.Itoa(memory))
+	input = strings.ReplaceAll(input, "{{PORT}}", strconv.Itoa(port))
+	return input
+}
 
-		// Security: Path traversal mitigation
-		// Order of operations is critical here:
-		// 1. Join relative paths with serverPath to get a full path
-		// 2. Clean resolves ".." and "." segments, converting "../../etc" to an absolute path
-		// 3. Validate the cleaned path against allowed prefixes
-		// This ensures that path traversal attempts like "data/../../../etc/passwd"
-		// are resolved to their actual target path before the prefix check.
-		hostPath := vol.Host
+func ParseVolumes(raw interface{}) []VolumeConfig {
+	var volumes []VolumeConfig
+	switch v := raw.(type) {
+	case []interface{}:
+		for _, item := range v {
+			switch val := item.(type) {
+			case string:
+				// Short syntax: "host:container[:mode]"
+				parts := strings.Split(val, ":")
+				if len(parts) >= 2 {
+					vol := VolumeConfig{
+						Host:      parts[0],
+						Container: parts[1],
+						Mode:      "rw",
+					}
+					if len(parts) == 3 {
+						vol.Mode = parts[2]
+					}
+					volumes = append(volumes, vol)
+				}
+			case map[string]interface{}:
+				host, _ := val["host"].(string)
+				container, _ := val["container"].(string)
+				mode := "rw"
+				if m, ok := val["mode"].(string); ok {
+					mode = m
+				}
+				vol := VolumeConfig{
+					Host:      host,
+					Container: container,
+					Mode:      mode,
+				}
+				volumes = append(volumes, vol)
+			}
+		}
+	case []VolumeConfig:
+		volumes = v
+	}
+	return volumes
+}
+
+func (s *TemplateService) ValidateTemplate(t *GameTemplate, serverPath string) error {
+	backupPath := filepath.Join(serverPath, "../backups")
+	logsPath := filepath.Join(serverPath, "../logs")
+	for _, vol := range t.Volumes {
+		hostPath := ReplaceTemplateVars(vol.Host, t.ID, t.Name, serverPath, backupPath, logsPath, t.DefaultMemory, t.DefaultPort)
 		if !filepath.IsAbs(hostPath) {
 			hostPath = filepath.Join(serverPath, hostPath)
 		}
 		hostPath = filepath.Clean(hostPath)
+
+		if !mountPathRegex.MatchString(hostPath) || !mountPathRegex.MatchString(vol.Container) {
+			return fmt.Errorf("%w: host=%s container=%s", ErrInvalidMountPath, hostPath, vol.Container)
+		}
 
 		allowed := false
 		for _, prefix := range s.security.AllowedMountPrefixes {
@@ -401,5 +497,14 @@ func (s *TemplateService) TemplateToYAML(t GameTemplate) string {
 }
 
 func (s *TemplateService) ParseYAML(yamlContent string, t *GameTemplate) error {
-	return yaml.Unmarshal([]byte(yamlContent), t)
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal([]byte(yamlContent), t); err != nil {
+		return err
+	}
+	if err := yaml.Unmarshal([]byte(yamlContent), &raw); err == nil {
+		if v, ok := raw["volumes"]; ok {
+			t.Volumes = ParseVolumes(v)
+		}
+	}
+	return nil
 }

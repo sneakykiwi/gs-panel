@@ -141,6 +141,9 @@ templ TemplateYAMLForm(templateID string, yamlContent string, errorMsg string, a
 					@VariableCard("{{PORT}}", "Server Port", "Replaced with the server's assigned port number")
 					@VariableCard("{{SERVER_ID}}", "Server ID", "Replaced with the unique server identifier (UUID)")
 					@VariableCard("{{SERVER_NAME}}", "Server Name", "Replaced with the server's display name")
+					@VariableCard("{{SERVER_DIR}}", "Server Directory", "Replaced with the server's data directory path")
+					@VariableCard("{{BACKUP_DIR}}", "Backup Directory", "Replaced with the server's backup directory path (optional)")
+					@VariableCard("{{LOGS_DIR}}", "Logs Directory", "Replaced with the server's logs directory path (optional)")
 				</div>
 			</div>
 

@@ -144,6 +144,9 @@ templ CreateAdvancedPage(user *models.User, template services.GameTemplate, yaml
 								@VariableItem("{{PORT}}", "Server port")
 								@VariableItem("{{SERVER_ID}}", "Server UUID")
 								@VariableItem("{{SERVER_NAME}}", "Server name")
+								@VariableItem("{{SERVER_DIR}}", "Server data directory path")
+								@VariableItem("{{BACKUP_DIR}}", "Server backup directory path (optional)")
+								@VariableItem("{{LOGS_DIR}}", "Server logs directory path (optional)")
 							</div>
 						</div>
 
@@ -255,4 +258,3 @@ script advancedEditorScript() {
 		advEditor.save();
 	};
 }
-
