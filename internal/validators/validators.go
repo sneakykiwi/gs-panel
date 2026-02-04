@@ -29,12 +29,6 @@ func (v *ServerUpdateValidator) Validate(form forms.UpdateServer, currentServer 
 		errors["port"] = "Port must be between 1024 and 65535"
 	}
 
-	if form.Port != currentServer.Port {
-		if err := v.serverService.ValidatePort(form.Port, currentServer.ID); err != nil {
-			errors["port"] = err.Error()
-		}
-	}
-
 	return errors
 }
 

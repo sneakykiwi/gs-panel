@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"fmt"
 	"github.com/sneakykiwi/gs-panel/internal/models"
 	"github.com/sneakykiwi/gs-panel/internal/services"
 	"github.com/sneakykiwi/gs-panel/views/layouts"
@@ -195,7 +194,8 @@ templ VariableCard(variable string, name string, description string) {
 			<span class="text-sm font-medium text-blue-400">{ name }</span>
 			<button
 				type="button"
-				@click={ fmt.Sprintf("navigator.clipboard.writeText('%s'); copied = true; setTimeout(() => copied = false, 1500)", variable) }
+				@click="navigator.clipboard.writeText($el.dataset.variable); copied = true; setTimeout(() => copied = false, 1500)"
+				data-variable={ variable }
 				class="text-xs text-gray-500 hover:text-white transition"
 				:class="copied ? 'text-green-400' : ''"
 			>

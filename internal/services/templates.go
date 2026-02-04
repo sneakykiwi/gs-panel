@@ -68,7 +68,9 @@ var (
 	ErrInvalidTemplate   = fmt.Errorf("invalid template")
 	ErrInvalidMountPath  = fmt.Errorf("invalid mount path")
 	ErrInvalidCapability = fmt.Errorf("invalid capability")
+	ErrInvalidTemplateID = fmt.Errorf("invalid template ID")
 	mountPathRegex       = regexp.MustCompile(`^[a-zA-Z0-9_/.-]+$`)
+	templateIDRegex      = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 )
 
 type SecurityConfig struct {
@@ -174,6 +176,13 @@ func (s *TemplateService) loadTemplateFile(filePath string) (GameTemplate, error
 func (s *TemplateService) validateTemplateFields(t *GameTemplate) error {
 	if t.ID == "" {
 		return fmt.Errorf("%w: missing id", ErrInvalidTemplate)
+	}
+	// Validate template ID to prevent XSS attacks
+	if !templateIDRegex.MatchString(t.ID) {
+		return fmt.Errorf("%w: template ID must only contain alphanumeric characters, hyphens, and underscores", ErrInvalidTemplateID)
+	}
+	if len(t.ID) > 64 {
+		return fmt.Errorf("%w: template ID must not exceed 64 characters", ErrInvalidTemplateID)
 	}
 	if t.DockerImage == "" {
 		return fmt.Errorf("%w: missing docker_image", ErrInvalidTemplate)

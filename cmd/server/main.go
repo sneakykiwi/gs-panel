@@ -104,7 +104,7 @@ func main() {
 	//}))
 
 	authHandler := handlers.NewAuthHandler(authService)
-	serverHandler := handlers.NewServerHandler(serverService, templateService)
+	serverHandler := handlers.NewServerHandler(serverService, templateService, cfg)
 	backupHandler := handlers.NewBackupHandler(backupService, serverService, schedulerService, cfg)
 	adminHandler := handlers.NewAdminHandler(authService, serverService)
 	filesHandler := handlers.NewFilesHandler(serverService, cfg)

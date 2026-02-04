@@ -3,8 +3,10 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
+	"github.com/sneakykiwi/gs-panel/internal/config"
 	"github.com/sneakykiwi/gs-panel/internal/forms"
 	"github.com/sneakykiwi/gs-panel/internal/middleware"
 	"github.com/sneakykiwi/gs-panel/internal/models"
@@ -20,10 +22,15 @@ import (
 type ServerHandler struct {
 	serverService   *services.ServerService
 	templateService *services.TemplateService
+	cfg             *config.Config
 }
 
-func NewServerHandler(serverService *services.ServerService, templateService *services.TemplateService) *ServerHandler {
-	return &ServerHandler{serverService: serverService, templateService: templateService}
+func NewServerHandler(serverService *services.ServerService, templateService *services.TemplateService, cfg *config.Config) *ServerHandler {
+	return &ServerHandler{
+		serverService:   serverService,
+		templateService: templateService,
+		cfg:             cfg,
+	}
 }
 
 func (h *ServerHandler) Dashboard(c fiber.Ctx) error {
@@ -168,6 +175,15 @@ func (h *ServerHandler) CreateAdvanced(c fiber.Ctx) error {
 
 	if template.DockerImage == "" {
 		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent, "Docker image is required in template"))
+	}
+
+	// SECURITY: Validate template against security policies (volumes and capabilities)
+	// This prevents non-admin users from creating templates with dangerous mount points or capabilities
+	// We validate against a temporary server path since the actual server doesn't exist yet
+	tempServerPath := filepath.Join(h.cfg.Storage.Servers, "validation-temp")
+	if err := h.templateService.ValidateTemplate(&template, tempServerPath); err != nil {
+		return Render(c, servers.CreateAdvancedPage(user, sourceTemplate, yamlContent,
+			fmt.Sprintf("Security validation failed: %s. Contact an administrator if you need additional capabilities or mount permissions.", err.Error())))
 	}
 
 	// If template ID already exists, append a number to make it unique

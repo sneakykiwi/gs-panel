@@ -6,14 +6,14 @@ import (
 )
 
 templ ServerControls(server *models.Server, isAdmin bool) {
-	<div id="server-controls-container" class="flex flex-wrap gap-3">
+	<div id="server-controls-container" class="flex flex-wrap gap-3" data-server-id={ server.ID }>
 		if server.Status == models.ServerStatusRunning {
 			<button 
 				hx-post={ "/servers/" + server.ID + "/stop" }
 				hx-swap="none"
 				hx-target="#server-controls-container"
 				@click="loading = true; action = 'stop'"
-				@htmx:after-request={ "loading = false; action = ''; showToast('success', 'Server stopped successfully'); htmx.ajax('GET', '/servers/" + server.ID + "/controls', {target: '#server-controls-container', swap: 'outerHTML'})" }
+				@htmx:after-request="loading = false; action = ''; showToast('success', 'Server stopped successfully'); htmx.ajax('GET', '/servers/' + $el.closest('#server-controls-container').dataset.serverId + '/controls', {target: '#server-controls-container', swap: 'outerHTML'})"
 				@htmx:response-error="loading = false; action = ''"
 				:disabled="loading"
 				class="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded transition flex items-center gap-2"
@@ -29,7 +29,7 @@ templ ServerControls(server *models.Server, isAdmin bool) {
 				hx-swap="none"
 				hx-target="#server-controls-container"
 				@click="loading = true; action = 'restart'"
-				@htmx:after-request={ "loading = false; action = ''; showToast('success', 'Server restarted successfully'); htmx.ajax('GET', '/servers/" + server.ID + "/controls', {target: '#server-controls-container', swap: 'outerHTML'})" }
+				@htmx:after-request="loading = false; action = ''; showToast('success', 'Server restarted successfully'); htmx.ajax('GET', '/servers/' + $el.closest('#server-controls-container').dataset.serverId + '/controls', {target: '#server-controls-container', swap: 'outerHTML'})"
 				@htmx:response-error="loading = false; action = ''"
 				:disabled="loading"
 				class="bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded transition flex items-center gap-2"
@@ -46,7 +46,7 @@ templ ServerControls(server *models.Server, isAdmin bool) {
 				hx-swap="none"
 				hx-target="#server-controls-container"
 				@click="loading = true; action = 'start'"
-				@htmx:after-request={ "loading = false; action = ''; showToast('success', 'Server started successfully'); htmx.ajax('GET', '/servers/" + server.ID + "/controls', {target: '#server-controls-container', swap: 'outerHTML'})" }
+				@htmx:after-request="loading = false; action = ''; showToast('success', 'Server started successfully'); htmx.ajax('GET', '/servers/' + $el.closest('#server-controls-container').dataset.serverId + '/controls', {target: '#server-controls-container', swap: 'outerHTML'})"
 				@htmx:response-error="loading = false; action = ''"
 				:disabled="loading"
 				class="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded transition flex items-center gap-2"
