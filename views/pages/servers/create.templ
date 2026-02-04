@@ -2,11 +2,53 @@ package servers
 
 import (
 	"fmt"
+	"encoding/json"
+	"strings"
 	"github.com/sneakykiwi/gs-panel/internal/models"
 	"github.com/sneakykiwi/gs-panel/internal/services"
 	"github.com/sneakykiwi/gs-panel/views/components"
 	"github.com/sneakykiwi/gs-panel/views/layouts"
 )
+
+func templateEnvToYAML(env map[string]string) string {
+	if len(env) == 0 {
+		return ""
+	}
+	var lines []string
+	for k, v := range env {
+		lines = append(lines, fmt.Sprintf("%s: %s", k, v))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func templatesToJSONData(templates []services.GameTemplate) string {
+	data := make(map[string]map[string]interface{})
+	for _, t := range templates {
+		envYAML := templateEnvToYAML(t.Environment)
+		data[t.ID] = map[string]interface{}{
+			"name":           t.Name,
+			"default_port":   t.DefaultPort,
+			"default_memory": t.DefaultMemory,
+			"env_yaml":       envYAML,
+		}
+	}
+	b, _ := json.Marshal(data)
+	return string(b)
+}
+
+func formatEnvValue(value string) string {
+	if strings.Contains(value, "{{MEMORY}}") {
+		return strings.ReplaceAll(value, "{{MEMORY}}", "[Memory Limit]")
+	}
+	return value
+}
+
+func getEnvHint(value string) string {
+	if strings.Contains(value, "{{MEMORY}}") {
+		return "This value will use the Memory Limit you set above"
+	}
+	return ""
+}
 
 templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg string) {
 	@layouts.Base("Create Server", user) {
@@ -14,7 +56,7 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 			@components.Sidebar(user)
 
 			<main class="flex-1 p-8 overflow-auto">
-				<div class="max-w-2xl mx-auto">
+				<div class="max-w-4xl mx-auto">
 					<h1 class="text-3xl font-bold mb-8">Create New Server</h1>
 
 					if errorMsg != "" {
@@ -23,92 +65,168 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 						</div>
 					}
 
-					<form
-						method="POST"
-						action="/servers"
-						class="bg-gray-800 rounded-lg p-6 border border-gray-700"
-						x-data="{ selected: '' }"
-					>
-						<div class="mb-6">
-							<label class="block text-sm font-medium mb-2" for="name">Server Name</label>
-							<input type="text" id="name" name="name" required
-								class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-								placeholder="My Minecraft Server"/>
-						</div>
-
-						<div class="mb-6">
-							<label class="block text-sm font-medium mb-2">Game</label>
-							<div class="grid grid-cols-2 gap-3">
-								for _, t := range templates {
-									<label class="cursor-pointer">
-										<input type="radio" name="game_type" value={ t.ID } class="sr-only peer" required
-											x-on:change={ fmt.Sprintf("selected = '%s'", t.ID) }/>
-										<div class="p-4 bg-gray-700 border border-gray-600 rounded hover:border-blue-500 peer-checked:border-blue-500 peer-checked:bg-blue-500/10 transition">
-											<p class="font-medium">{ t.Name }</p>
-											<p class="text-sm text-gray-400">Port: { fmt.Sprintf("%d", t.DefaultPort) }</p>
-										</div>
-									</label>
-								}
-							</div>
-						</div>
-
-						<div class="mb-6">
-							<label class="block text-sm font-medium mb-2" for="memory_limit">Memory Limit (MB)</label>
-							<input type="number" id="memory_limit" name="memory_limit" min="512" step="256"
-								class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-								placeholder="2048"/>
-							<p class="text-sm text-gray-400 mt-1">Leave empty for game default</p>
-						</div>
-
-						<div class="mb-6">
-							<label class="block text-sm font-medium mb-2" for="port">Port</label>
-							<input type="number" id="port" name="port" min="1024" max="65535"
-								class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-								placeholder="Leave empty for game default"/>
-							<p class="text-sm text-gray-400 mt-1">Leave empty for game default</p>
-						</div>
-
-						<div x-show="selected" x-cloak class="mb-6 border-t border-gray-700 pt-6">
-							<h3 class="text-lg font-medium mb-4">Game Settings</h3>
-							for _, t := range templates {
-								if len(t.Environment) > 0 {
-									<div x-show={ fmt.Sprintf("selected === '%s'", t.ID) } class="space-y-4">
-										for key, value := range t.Environment {
-											<div>
-												<label class="block text-sm font-medium mb-1">
-													{ key }
-													if t.VarDescriptions != nil && t.VarDescriptions[key] != "" {
-														<span class="text-gray-500 font-normal ml-2 cursor-help" title={ t.VarDescriptions[key] }>ⓘ</span>
-													}
-												</label>
-												<input
-													type="text"
-													name={ "env_" + key }
-													placeholder={ value }
-													class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
-												/>
-												if t.VarDescriptions != nil && t.VarDescriptions[key] != "" {
-													<p class="text-gray-500 text-xs mt-1">{ t.VarDescriptions[key] }</p>
-												}
-											</div>
-										}
-									</div>
+					<div
+						x-data={ fmt.Sprintf(`{
+							selected: '',
+							mode: 'form',
+							templates: %s,
+							envYaml: '',
+							updateEnvYaml() {
+								if (this.selected && this.templates[this.selected]) {
+									this.envYaml = this.templates[this.selected].env_yaml;
 								}
 							}
-							<p class="text-sm text-gray-400 mt-4">Leave empty to use default values</p>
+						}`, templatesToJSONData(templates)) }
+						x-init="$watch('selected', () => updateEnvYaml())"
+					>
+						<div class="flex gap-2 mb-6">
+							<button
+								type="button"
+								@click="mode = 'form'"
+								:class="mode === 'form' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+								class="px-4 py-2 rounded transition text-sm font-medium"
+							>
+								Form View
+							</button>
+							<button
+								type="button"
+								@click="mode = 'yaml'"
+								:class="mode === 'yaml' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+								class="px-4 py-2 rounded transition text-sm font-medium"
+							>
+								YAML Editor
+							</button>
 						</div>
 
-						<div class="flex gap-4">
-							<button type="submit"
-								class="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded transition">
-								Create Server
-							</button>
-							<a href="/"
-								class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition text-center">
-								Cancel
-							</a>
-						</div>
-					</form>
+						<form method="POST" action="/servers" class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+							<div class="mb-6">
+								<label class="block text-sm font-medium mb-2" for="name">Server Name</label>
+								<input type="text" id="name" name="name" required
+									class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
+									placeholder="My Minecraft Server"/>
+							</div>
+
+							<div class="mb-6">
+								<label class="block text-sm font-medium mb-2">Game</label>
+								<div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+									for _, t := range templates {
+										<label class="cursor-pointer">
+											<input type="radio" name="game_type" value={ t.ID } class="sr-only peer" required
+												x-on:change={ fmt.Sprintf("selected = '%s'", t.ID) }/>
+											<div class="p-4 bg-gray-700 border border-gray-600 rounded hover:border-blue-500 peer-checked:border-blue-500 peer-checked:bg-blue-500/10 transition">
+												<p class="font-medium">{ t.Name }</p>
+												<p class="text-sm text-gray-400">Port: { fmt.Sprintf("%d", t.DefaultPort) }</p>
+											</div>
+										</label>
+									}
+								</div>
+							</div>
+
+							<div class="grid grid-cols-2 gap-4 mb-6">
+								<div>
+									<label class="block text-sm font-medium mb-2" for="memory_limit">Memory Limit (MB)</label>
+									<input type="number" id="memory_limit" name="memory_limit" min="512" step="256"
+										class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
+										placeholder="2048"/>
+									<p class="text-sm text-gray-400 mt-1">Leave empty for default</p>
+								</div>
+								<div>
+									<label class="block text-sm font-medium mb-2" for="port">Port</label>
+									<input type="number" id="port" name="port" min="1024" max="65535"
+										class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
+										placeholder="Auto"/>
+									<p class="text-sm text-gray-400 mt-1">Leave empty for default</p>
+								</div>
+							</div>
+
+							<!-- Form View -->
+							<div x-show="mode === 'form' && selected" x-cloak class="mb-6 border-t border-gray-700 pt-6">
+								<h3 class="text-lg font-medium mb-4">Environment Variables</h3>
+								for _, t := range templates {
+									if len(t.Environment) > 0 {
+										<div x-show={ fmt.Sprintf("selected === '%s'", t.ID) } class="space-y-4">
+											for key, value := range t.Environment {
+												<div>
+													<label class="block text-sm font-medium mb-1">
+														{ key }
+														if t.VarDescriptions != nil && t.VarDescriptions[key] != "" {
+															<span class="text-gray-500 font-normal ml-2 cursor-help" title={ t.VarDescriptions[key] }>ⓘ</span>
+														}
+													</label>
+													if strings.Contains(value, "{{MEMORY}}") {
+														<div class="flex items-center gap-2">
+															<input
+																type="text"
+																name={ "env_" + key }
+																placeholder={ formatEnvValue(value) }
+																class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
+															/>
+															<span class="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded">Uses Memory</span>
+														</div>
+														<p class="text-blue-400 text-xs mt-1">Auto-calculated from Memory Limit above</p>
+													} else {
+														<input
+															type="text"
+															name={ "env_" + key }
+															placeholder={ value }
+															class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"
+														/>
+													}
+													if t.VarDescriptions != nil && t.VarDescriptions[key] != "" && !strings.Contains(value, "{{MEMORY}}") {
+														<p class="text-gray-500 text-xs mt-1">{ t.VarDescriptions[key] }</p>
+													}
+												</div>
+											}
+										</div>
+									}
+								}
+								<p class="text-sm text-gray-400 mt-4">Leave empty to use default values</p>
+							</div>
+
+							<!-- YAML View -->
+							<div x-show="mode === 'yaml' && selected" x-cloak class="mb-6 border-t border-gray-700 pt-6">
+								<div class="flex justify-between items-center mb-4">
+									<h3 class="text-lg font-medium">Environment Variables (YAML)</h3>
+									<button
+										type="button"
+										@click="updateEnvYaml()"
+										class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded transition"
+									>
+										Reset to Default
+									</button>
+								</div>
+								<div class="bg-yellow-500/10 border border-yellow-500/30 rounded p-3 mb-4">
+									<p class="text-yellow-300 text-sm font-medium mb-1">Template Variables</p>
+									<p class="text-yellow-200/70 text-xs">
+										Use <code class="bg-gray-800 px-1 rounded">{"{{MEMORY}}"}</code> to reference the Memory Limit value.
+										It will be replaced with the actual MB value when the server starts.
+									</p>
+								</div>
+								<textarea
+									name="env_yaml"
+									x-model="envYaml"
+									rows="12"
+									class="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+									spellcheck="false"
+									placeholder="KEY: value"
+								></textarea>
+								<p class="text-sm text-gray-400 mt-2">Format: <code class="bg-gray-700 px-1 rounded">KEY: value</code> (one per line)</p>
+							</div>
+
+							<input type="hidden" name="edit_mode" x-bind:value="mode"/>
+
+							<div class="flex gap-4">
+								<button type="submit"
+									class="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded transition">
+									Create Server
+								</button>
+								<a href="/"
+									class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition text-center">
+									Cancel
+								</a>
+							</div>
+						</form>
+					</div>
 				</div>
 			</main>
 		</div>

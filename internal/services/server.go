@@ -89,7 +89,11 @@ func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) 
 
 	env := make(map[string]string)
 	for k, v := range template.Environment {
-		env[k] = strings.ReplaceAll(v, "{{MEMORY}}", strconv.Itoa(req.MemoryLimit))
+		v = strings.ReplaceAll(v, "{{MEMORY}}", strconv.Itoa(req.MemoryLimit))
+		v = strings.ReplaceAll(v, "{{PORT}}", strconv.Itoa(req.Port))
+		v = strings.ReplaceAll(v, "{{SERVER_ID}}", serverID)
+		v = strings.ReplaceAll(v, "{{SERVER_NAME}}", req.Name)
+		env[k] = v
 	}
 
 	var customEnvStr string
@@ -613,7 +617,11 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 
 	env := make(map[string]string)
 	for k, v := range template.Environment {
-		env[k] = strings.ReplaceAll(v, "{{MEMORY}}", strconv.Itoa(server.MemoryLimit))
+		v = strings.ReplaceAll(v, "{{MEMORY}}", strconv.Itoa(server.MemoryLimit))
+		v = strings.ReplaceAll(v, "{{PORT}}", strconv.Itoa(server.Port))
+		v = strings.ReplaceAll(v, "{{SERVER_ID}}", server.ID)
+		v = strings.ReplaceAll(v, "{{SERVER_NAME}}", server.Name)
+		env[k] = v
 	}
 	server.Environment = s.templates.EncodeEnvironment(env)
 	server.DockerImage = template.DockerImage

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/sneakykiwi/gs-panel/internal/forms"
 	"github.com/sneakykiwi/gs-panel/internal/middleware"
@@ -68,9 +69,18 @@ func (h *ServerHandler) Create(c fiber.Ctx) error {
 
 	template, _ := h.templateService.Get(form.GameType)
 	customVars := make(map[string]string)
-	for key := range template.Environment {
-		if val := c.FormValue("env_" + key); val != "" {
-			customVars[key] = val
+
+	editMode := c.FormValue("edit_mode")
+	if editMode == "yaml" {
+		envYaml := c.FormValue("env_yaml")
+		if envYaml != "" {
+			customVars = parseEnvYAML(envYaml)
+		}
+	} else {
+		for key := range template.Environment {
+			if val := c.FormValue("env_" + key); val != "" {
+				customVars[key] = val
+			}
 		}
 	}
 
@@ -86,6 +96,26 @@ func (h *ServerHandler) Create(c fiber.Ctx) error {
 	}
 
 	return c.Redirect().To("/")
+}
+
+func parseEnvYAML(yaml string) map[string]string {
+	result := make(map[string]string)
+	lines := strings.Split(yaml, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key != "" {
+				result[key] = value
+			}
+		}
+	}
+	return result
 }
 
 func (h *ServerHandler) View(c fiber.Ctx) error {

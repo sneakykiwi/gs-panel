@@ -74,11 +74,21 @@ health_check:
 
 ### Variable Substitution
 
-Use `{{MEMORY}}` in environment values to substitute the server's memory limit:
+Use these placeholders in environment values - they get replaced with actual values when the server starts:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{MEMORY}}` | Server's memory limit in MB | `2048` |
+| `{{PORT}}` | Server's assigned port | `25565` |
+| `{{SERVER_ID}}` | Unique server identifier (UUID) | `019c182e-860f-755c-b18a-a97f5d5c6bf2` |
+| `{{SERVER_NAME}}` | Server's display name | `My Minecraft Server` |
 
 ```yaml
 environment:
   MAX_MEMORY: "{{MEMORY}}M"
+  SERVER_PORT: "{{PORT}}"
+  CUSTOM_ID: "{{SERVER_ID}}"
+  DISPLAY_NAME: "{{SERVER_NAME}}"
 ```
 
 ## Example Template
