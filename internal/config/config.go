@@ -74,8 +74,8 @@ func Load() *Config {
 			Servers:          serversDir,
 			Backups:          filepath.Join(baseDir, "backups"),
 			Logs:             filepath.Join(baseDir, "logs"),
-			DefaultTemplates: "./templates",
-			UserTemplates:    filepath.Join(baseDir, "templates"),
+			DefaultTemplates: getEnv("GS_PANEL_DEFAULT_TEMPLATES_DIR", "./templates"),
+			UserTemplates:    getEnv("GS_PANEL_USER_TEMPLATES_DIR", filepath.Join(baseDir, "templates")),
 		},
 		Docker: DockerConfig{
 			Socket:         getEnv("GS_PANEL_DOCKER_SOCKET", defaultSocket),

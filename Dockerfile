@@ -35,14 +35,19 @@ WORKDIR /data
 
 COPY --from=builder /build/gs-panel /usr/local/bin/gs-panel
 COPY --from=builder /build/web /data/web
-COPY --from=builder /build/templates /data/templates
 
-RUN mkdir -p /data/servers /data/backups /data/logs /data/user-templates && \
+# Copy default templates to a separate location (not in /data volume)
+# This separates built-in templates from user templates
+COPY --from=builder /build/templates /app/templates
+
+RUN mkdir -p /data/servers /data/backups /data/logs /data/templates && \
     chown -R gs-panel:gs-panel /data
 
 USER gs-panel
 
 ENV GS_PANEL_DATA_DIR=/data
+ENV GS_PANEL_DEFAULT_TEMPLATES_DIR=/app/templates
+ENV GS_PANEL_USER_TEMPLATES_DIR=/data/templates
 
 EXPOSE 8080
 
