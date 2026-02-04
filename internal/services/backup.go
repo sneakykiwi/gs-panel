@@ -118,7 +118,7 @@ func (s *BackupService) runBackup(backup *models.Backup, server *models.Server, 
 
 	var processed int
 	err = filepath.Walk(serverPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+		if err != nil {
 			return err
 		}
 
@@ -134,19 +134,21 @@ func (s *BackupService) runBackup(backup *models.Backup, server *models.Server, 
 			return err
 		}
 
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
+		if !info.IsDir() {
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
 
-		if _, err := io.Copy(tarWriter, f); err != nil {
-			return err
-		}
+			if _, err := io.Copy(tarWriter, f); err != nil {
+				return err
+			}
 
-		processed++
-		s.progress[serverID].Done = processed
-		s.progress[serverID].Percentage = float64(processed) / float64(totalFiles) * 100
+			processed++
+			s.progress[serverID].Done = processed
+			s.progress[serverID].Percentage = float64(processed) / float64(totalFiles) * 100
+		}
 
 		return nil
 	})

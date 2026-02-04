@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sneakykiwi/gs-panel/internal/config"
@@ -41,24 +43,267 @@ func (e *ErrLogSaveFailed) Unwrap() error {
 	return e.Err
 }
 
+type ImagePullProgress struct {
+	mu              sync.Mutex
+	ServerID        string
+	Image           string
+	Status          string
+	Error           string
+	TotalLayers     int
+	CompletedLayers int
+	TotalBytes      int64
+	DownloadedBytes int64
+	ExtractedBytes  int64
+	StartTime       time.Time
+	LastUpdate      time.Time
+	layerProgress   map[string]*layerProgress
+}
+
+type layerProgress struct {
+	downloadedBytes int64
+	totalBytes      int64
+	extractedBytes  int64
+	status          string
+}
+
 type ServerService struct {
-	db             *gorm.DB
-	docker         *client.Client
-	cfg            *config.Config
-	templates      *TemplateService
-	consoleService *ConsoleService
-	logService     *LogService
+	mu                sync.RWMutex
+	db                *gorm.DB
+	docker            *client.Client
+	cfg               *config.Config
+	templates         *TemplateService
+	consoleService    *ConsoleService
+	logService        *LogService
+	imagePullProgress map[string]*ImagePullProgress
 }
 
 func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, templates *TemplateService, consoleService *ConsoleService, logService *LogService) *ServerService {
 	return &ServerService{
-		db:             db,
-		docker:         docker,
-		cfg:            cfg,
-		templates:      templates,
-		consoleService: consoleService,
-		logService:     logService,
+		db:                db,
+		docker:            docker,
+		cfg:               cfg,
+		templates:         templates,
+		consoleService:    consoleService,
+		logService:        logService,
+		imagePullProgress: make(map[string]*ImagePullProgress),
 	}
+}
+
+func (s *ServerService) CheckImageExists(ctx context.Context, image string) (bool, error) {
+	_, err := s.docker.ImageInspect(ctx, image)
+	if err != nil {
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "no such image") || strings.Contains(errStr, "not found") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *ServerService) GetImagePullProgress(serverID string) *ImagePullProgress {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.imagePullProgress[serverID]
+}
+
+func (s *ServerService) StartImagePull(server *models.Server, progress *ImagePullProgress) error {
+	ctx := context.Background()
+
+	progress.mu.Lock()
+	progress.Status = "pulling"
+	progress.StartTime = time.Now()
+	progress.LastUpdate = time.Now()
+	progress.layerProgress = make(map[string]*layerProgress)
+	progress.mu.Unlock()
+
+	s.broadcastPullProgress(server.ID, progress)
+
+	if s.consoleService != nil {
+		s.consoleService.Broadcast(server.ID, fmt.Sprintf("[info] Pulling Docker image: %s\n", server.DockerImage))
+	}
+
+	resp, err := s.docker.ImagePull(ctx, server.DockerImage, client.ImagePullOptions{})
+	if err != nil {
+		progress.mu.Lock()
+		progress.Status = "error"
+		progress.Error = err.Error()
+		progress.mu.Unlock()
+
+		s.broadcastPullProgress(server.ID, progress)
+
+		if s.consoleService != nil {
+			s.consoleService.Broadcast(server.ID, fmt.Sprintf("[error] Failed to pull image: %v\n", err))
+		}
+		return err
+	}
+	defer resp.Close()
+
+	decoder := json.NewDecoder(resp)
+	for {
+		var msg json.RawMessage
+		if err := decoder.Decode(&msg); err != nil {
+			if err == io.EOF {
+				break
+			}
+			logger.Error().Str("server_id", server.ID).Err(err).Msg("Failed to decode pull progress")
+			break
+		}
+
+		var pullMsg struct {
+			ID             string `json:"id"`
+			Status         string `json:"status"`
+			Error          string `json:"error"`
+			ProgressDetail struct {
+				Current int64 `json:"current"`
+				Total   int64 `json:"total"`
+			} `json:"progressDetail"`
+		}
+
+		if err := json.Unmarshal(msg, &pullMsg); err != nil {
+			continue
+		}
+
+		if pullMsg.Error != "" {
+			progress.mu.Lock()
+			progress.Status = "error"
+			progress.Error = pullMsg.Error
+			progress.mu.Unlock()
+			s.broadcastPullProgress(server.ID, progress)
+			break
+		}
+
+		progress.mu.Lock()
+
+		switch pullMsg.Status {
+		case "Pulling fs layer":
+			if pullMsg.ID != "" {
+				progress.TotalLayers++
+				progress.layerProgress[pullMsg.ID] = &layerProgress{
+					status: "downloading",
+				}
+			}
+		case "Downloading":
+			if pullMsg.ID != "" {
+				if layer, exists := progress.layerProgress[pullMsg.ID]; exists {
+					if pullMsg.ProgressDetail.Total > 0 && layer.totalBytes == 0 {
+						progress.TotalBytes += pullMsg.ProgressDetail.Total
+						layer.totalBytes = pullMsg.ProgressDetail.Total
+					}
+					layer.downloadedBytes = pullMsg.ProgressDetail.Current
+					layer.status = "downloading"
+				}
+			}
+		case "Download complete":
+			if pullMsg.ID != "" {
+				if layer, exists := progress.layerProgress[pullMsg.ID]; exists {
+					layer.status = "extracting"
+					progress.CompletedLayers++
+				}
+			}
+		case "Extracting":
+			if pullMsg.ID != "" {
+				if layer, exists := progress.layerProgress[pullMsg.ID]; exists {
+					layer.extractedBytes = pullMsg.ProgressDetail.Current
+				}
+			}
+		case "Pull complete":
+			if pullMsg.ID != "" {
+				if layer, exists := progress.layerProgress[pullMsg.ID]; exists {
+					layer.status = "complete"
+					if layer.totalBytes > 0 {
+						progress.ExtractedBytes += layer.totalBytes
+					}
+				}
+			}
+		}
+
+		progress.DownloadedBytes = 0
+		for _, layer := range progress.layerProgress {
+			progress.DownloadedBytes += layer.downloadedBytes
+		}
+
+		progress.LastUpdate = time.Now()
+		progress.mu.Unlock()
+
+		s.broadcastPullProgress(server.ID, progress)
+	}
+
+	progress.mu.Lock()
+	progress.Status = "completed"
+	progress.mu.Unlock()
+
+	s.broadcastPullProgress(server.ID, progress)
+
+	if s.consoleService != nil {
+		s.consoleService.Broadcast(server.ID, "[info] Docker image pull completed successfully\n")
+	}
+
+	return nil
+}
+
+func (s *ServerService) broadcastPullProgress(serverID string, progress *ImagePullProgress) {
+	if progress == nil {
+		return
+	}
+
+	progress.mu.Lock()
+	elapsed := time.Since(progress.StartTime).Seconds()
+	downloadSpeed := float64(0)
+	if elapsed > 0 && progress.DownloadedBytes > 0 {
+		downloadSpeed = float64(progress.DownloadedBytes) / elapsed / (1024 * 1024)
+	}
+
+	remainingBytes := progress.TotalBytes - progress.DownloadedBytes
+	eta := float64(0)
+	if downloadSpeed > 0 && remainingBytes > 0 {
+		eta = float64(remainingBytes) / (downloadSpeed * 1024 * 1024)
+	}
+
+	percentage := float64(0)
+	if progress.TotalBytes > 0 {
+		percentage = float64(progress.DownloadedBytes) / float64(progress.TotalBytes) * 100
+	}
+
+	payload := map[string]interface{}{
+		"status":           progress.Status,
+		"error":            progress.Error,
+		"percentage":       percentage,
+		"downloaded_bytes": progress.DownloadedBytes,
+		"total_bytes":      progress.TotalBytes,
+		"completed_layers": progress.CompletedLayers,
+		"total_layers":     progress.TotalLayers,
+		"speed_mbps":       downloadSpeed,
+		"eta_seconds":      eta,
+		"image":            progress.Image,
+	}
+	progress.mu.Unlock()
+
+	if s.consoleService != nil {
+		data, _ := json.Marshal(map[string]interface{}{
+			"type": "image_pull",
+			"data": payload,
+		})
+		s.consoleService.Broadcast(serverID, "[json]"+string(data))
+	}
+}
+
+func (s *ServerService) cleanupImagePullProgress(serverID string) {
+	s.mu.Lock()
+	delete(s.imagePullProgress, serverID)
+	s.mu.Unlock()
+}
+
+func (s *ServerService) replaceTemplateVars(cmd string, server *models.Server, serverPath, backupPath, logsPath string) string {
+	result := cmd
+	result = strings.ReplaceAll(result, "{{MEMORY}}", strconv.Itoa(server.MemoryLimit))
+	result = strings.ReplaceAll(result, "{{PORT}}", strconv.Itoa(server.Port))
+	result = strings.ReplaceAll(result, "{{SERVER_ID}}", server.ID)
+	result = strings.ReplaceAll(result, "{{SERVER_NAME}}", server.Name)
+	result = strings.ReplaceAll(result, "{{SERVER_DIR}}", serverPath)
+	result = strings.ReplaceAll(result, "{{BACKUP_DIR}}", backupPath)
+	result = strings.ReplaceAll(result, "{{LOGS_DIR}}", logsPath)
+	return result
 }
 
 func (s *ServerService) GetServerTemplate(server *models.Server) (GameTemplate, bool) {
@@ -279,13 +524,19 @@ func (s *ServerService) Stop(id string) error {
 
 	template, _ := s.GetServerTemplate(server)
 
+	serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
+	backupPath := s.cfg.Storage.Backups
+	logsPath := s.cfg.Storage.Logs
+
 	if s.consoleService != nil && server.Status == models.ServerStatusRunning {
 		if template.SaveCommand != "" {
-			s.consoleService.SendCommand(server.ID, template.SaveCommand)
+			cmd := s.replaceTemplateVars(template.SaveCommand, server, serverPath, backupPath, logsPath)
+			s.consoleService.SendCommand(server.ID, cmd)
 			time.Sleep(2 * time.Second)
 		}
 		if template.StopCommand != "" {
-			s.consoleService.SendCommand(server.ID, template.StopCommand)
+			cmd := s.replaceTemplateVars(template.StopCommand, server, serverPath, backupPath, logsPath)
+			s.consoleService.SendCommand(server.ID, cmd)
 			time.Sleep(3 * time.Second)
 		}
 		s.consoleService.StopSession(server.ID)
@@ -344,11 +595,36 @@ func (s *ServerService) Restart(id string) error {
 func (s *ServerService) createContainer(ctx context.Context, server *models.Server) (string, error) {
 	template, _ := s.GetServerTemplate(server)
 
-	pullResp, err := s.docker.ImagePull(ctx, server.DockerImage, client.ImagePullOptions{})
+	imageExists, err := s.CheckImageExists(ctx, server.DockerImage)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check image: %w", err)
 	}
-	pullResp.Close()
+
+	if !imageExists {
+		s.mu.Lock()
+		if _, exists := s.imagePullProgress[server.ID]; exists {
+			s.mu.Unlock()
+			return "", fmt.Errorf("image pull already in progress for this server")
+		}
+		progress := &ImagePullProgress{
+			ServerID: server.ID,
+			Image:    server.DockerImage,
+			Status:   "starting",
+		}
+		s.imagePullProgress[server.ID] = progress
+		s.mu.Unlock()
+
+		if err := s.StartImagePull(server, progress); err != nil {
+			s.mu.Lock()
+			delete(s.imagePullProgress, server.ID)
+			s.mu.Unlock()
+			return "", fmt.Errorf("failed to pull image: %w", err)
+		}
+
+		s.mu.Lock()
+		delete(s.imagePullProgress, server.ID)
+		s.mu.Unlock()
+	}
 
 	env := s.templates.DecodeEnvironment(server.Environment)
 	customEnv := s.templates.DecodeEnvironment(server.CustomEnvironment)

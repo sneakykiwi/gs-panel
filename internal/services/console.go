@@ -424,8 +424,6 @@ func (s *ConsoleService) SendCommand(serverID string, command string) error {
 }
 
 func (s *ConsoleService) Broadcast(serverID string, message string) {
-	logger.Info().Str("server_id", serverID).Str("log", message).Msg("console")
-
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -440,8 +438,6 @@ func (s *ConsoleService) Broadcast(serverID string, message string) {
 }
 
 func (s *ConsoleService) BroadcastStatus(serverID string, status string) {
-	logger.Info().Str("server_id", serverID).Str("status", status).Msg("console status")
-
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

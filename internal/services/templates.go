@@ -211,7 +211,6 @@ func (s *TemplateService) loadTemplateFile(filePath string) (GameTemplate, error
 		return GameTemplate{}, err
 	}
 
-	// Parse volumes using helper if present
 	if raw != nil {
 		if v, ok := raw["volumes"]; ok {
 			template.Volumes = ParseVolumes(v)
@@ -225,7 +224,6 @@ func (s *TemplateService) validateTemplateFields(t *GameTemplate) error {
 	if t.ID == "" {
 		return fmt.Errorf("%w: missing id", ErrInvalidTemplate)
 	}
-	// Validate template ID to prevent XSS attacks
 	if !templateIDRegex.MatchString(t.ID) {
 		return fmt.Errorf("%w: template ID must only contain alphanumeric characters, hyphens, and underscores", ErrInvalidTemplateID)
 	}
@@ -247,7 +245,6 @@ func (s *TemplateService) validateTemplateFields(t *GameTemplate) error {
 	return nil
 }
 
-// Template variable replacement helper
 func ReplaceTemplateVars(input, serverID, serverName, serverPath, backupPath, logsPath string, memory, port int) string {
 	input = strings.ReplaceAll(input, "{{SERVER_ID}}", serverID)
 	input = strings.ReplaceAll(input, "{{SERVER_NAME}}", serverName)

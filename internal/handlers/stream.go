@@ -41,8 +41,8 @@ type wsInMessage struct {
 type statsPayload struct {
 	CPU string `json:"cpu"`
 	Mem string `json:"mem"`
-	Rx  string `json:"rx"`
-	Tx  string `json:"tx"`
+	Rx  uint64 `json:"rx"`
+	Tx  uint64 `json:"tx"`
 }
 
 func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
@@ -178,28 +178,27 @@ func (h *StreamHandler) HandleServerWS(c *websocket.Conn) {
 				return
 			case <-statsTicker.C:
 				var payload statsPayload
-				if server.ContainerID == "" {
-					payload = statsPayload{CPU: "—", Mem: "—", Rx: "—", Tx: "—"}
+				currentServer, err := h.serverService.Get(server.ID)
+				if err != nil || currentServer.ContainerID == "" {
+					payload = statsPayload{CPU: "—", Mem: "—", Rx: 0, Tx: 0}
 				} else {
 					updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
-					_ = h.statsService.Update(updateCtx, server.ID, server.ContainerID)
+					_ = h.statsService.Update(updateCtx, server.ID, currentServer.ContainerID)
 					updateCancel()
 					stats := h.statsService.Get(server.ID)
 					if stats == nil {
-						payload = statsPayload{CPU: "Error", Mem: "Error", Rx: "Error", Tx: "Error"}
+						payload = statsPayload{CPU: "Error", Mem: "Error", Rx: 0, Tx: 0}
 					} else {
 						cpu := fmt.Sprintf("%.1f%%", stats.CPUPercent)
 						memUsed := math.Round(float64(stats.MemoryUsed) / 1024 / 1024)
 						memLim := math.Round(float64(stats.MemoryLimit) / 1024 / 1024)
 						memPct := fmt.Sprintf("%.1f", stats.MemoryPct)
 						mem := fmt.Sprintf("%d / %d MB (%s%%)", int(memUsed), int(memLim), memPct)
-						rx := fmt.Sprintf("%d KB", int(math.Round(float64(stats.NetRx)/1024)))
-						tx := fmt.Sprintf("%d KB", int(math.Round(float64(stats.NetTx)/1024)))
 						payload = statsPayload{
 							CPU: cpu,
 							Mem: html.EscapeString(mem),
-							Rx:  html.EscapeString(rx),
-							Tx:  html.EscapeString(tx),
+							Rx:  stats.NetRx,
+							Tx:  stats.NetTx,
 						}
 					}
 				}

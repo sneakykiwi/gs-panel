@@ -74,11 +74,56 @@ templ ViewPage(server *models.Server, user *models.User, isOutdated bool, newVer
 				<h2 class="text-xl font-bold mb-4">Controls</h2>
 				@partials.ServerControls(server, user.IsAdmin)
 			</div>
-				
+
+			<div id="image-pull-progress" class="hidden bg-gray-800 rounded-lg p-6 border border-gray-700 mb-8">
+				<h3 class="text-lg font-semibold mb-4 text-blue-400">Pulling Docker Image</h3>
+				<div class="space-y-3">
+					<div class="flex justify-between text-sm">
+						<span id="pull-status" class="text-gray-300">Starting pull...</span>
+						<span id="pull-percentage" class="font-mono font-bold">0%</span>
+					</div>
+					<div class="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+						<div id="pull-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+					</div>
+					<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+						<div class="bg-gray-900 rounded p-3">
+							<div class="text-gray-400 text-xs mb-1">Downloaded</div>
+							<div id="pull-downloaded" class="font-mono text-xs">0 MB</div>
+						</div>
+						<div class="bg-gray-900 rounded p-3">
+							<div class="text-gray-400 text-xs mb-1">Total Size</div>
+							<div id="pull-total" class="font-mono text-xs">0 MB</div>
+						</div>
+						<div class="bg-gray-900 rounded p-3">
+							<div class="text-gray-400 text-xs mb-1">Speed</div>
+							<div id="pull-speed" class="font-mono text-xs">0 MB/s</div>
+						</div>
+						<div class="bg-gray-900 rounded p-3">
+							<div class="text-gray-400 text-xs mb-1">ETA</div>
+							<div id="pull-eta" class="font-mono text-xs">—</div>
+						</div>
+					</div>
+					<div class="flex justify-between text-xs text-gray-400">
+						<span id="pull-layers">Layer 0/0</span>
+						<span id="pull-image" class="truncate max-w-[200px]" title="">—</span>
+					</div>
+				</div>
+			</div>
+
 				<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 					<!-- CONSOLE -->
-					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-						<h2 class="text-xl font-bold mb-4">Console</h2>
+					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700" x-data="{ fullscreen: false }">
+						<div class="flex justify-between items-center mb-4">
+							<h2 class="text-xl font-bold">Console</h2>
+							<button @click="fullscreen = !fullscreen" class="text-gray-400 hover:text-white transition p-1" title="Toggle Fullscreen">
+								<svg x-show="!fullscreen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+								</svg>
+								<svg x-show="fullscreen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+								</svg>
+							</button>
+						</div>
 						
 						<div 
 							id="console-out"
@@ -100,8 +145,35 @@ templ ViewPage(server *models.Server, user *models.User, isOutdated bool, newVer
 								Send
 							</button>
 						</form>
+
+						<div x-show="fullscreen" x-cloak class="fixed inset-0 z-50 bg-gray-900 p-6 flex flex-col">
+							<div class="flex justify-between items-center mb-4">
+								<h2 class="text-xl font-bold">Console (Full Screen)</h2>
+								<button @click="fullscreen = false" class="text-gray-400 hover:text-white transition p-1" title="Close Fullscreen">
+									<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+									</svg>
+								</button>
+							</div>
+							<div id="console-out-fullscreen" class="flex-1 bg-gray-900 rounded p-4 overflow-auto font-mono text-sm text-gray-300 whitespace-pre-wrap"></div>
+							<form id="console-form-fullscreen" class="mt-4 flex gap-2">
+								<input 
+									type="text"
+									id="console-input-fullscreen"
+									name="command"
+									placeholder="Enter command..."
+									class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded"
+								/>
+								<button 
+									type="submit"
+									class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded"
+								>
+									Send
+								</button>
+							</form>
+						</div>
 					</div>
-					
+
 					<!-- STATS -->
 					<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
 						<h2 class="text-xl font-bold mb-4">Stats</h2>
@@ -116,11 +188,17 @@ templ ViewPage(server *models.Server, user *models.User, isOutdated bool, newVer
 								<div id="mem-value" class="text-xl font-bold">—</div>
 							</div>
 							<div class="bg-gray-900 rounded p-4">
-								<div class="text-gray-400">Net RX</div>
+								<div class="text-gray-400 flex items-center gap-1">
+									Net RX
+									<span class="text-gray-500 cursor-help" title="Network data received by the container">ⓘ</span>
+								</div>
 								<div id="rx-value" class="text-xl font-bold">—</div>
 							</div>
 							<div class="bg-gray-900 rounded p-4">
-								<div class="text-gray-400">Net TX</div>
+								<div class="text-gray-400 flex items-center gap-1">
+									Net TX
+									<span class="text-gray-500 cursor-help" title="Network data sent by the container">ⓘ</span>
+								</div>
 								<div id="tx-value" class="text-xl font-bold">—</div>
 							</div>
 						</div>
@@ -157,6 +235,63 @@ script webSocketScriptContent(serverID string) {
 			const consoleOut = document.getElementById('console-out');
 			const consoleForm = document.getElementById('console-form');
 			const consoleInput = document.getElementById('console-input');
+			const consoleOutFullscreen = document.getElementById('console-out-fullscreen');
+			const consoleInputFullscreen = document.getElementById('console-input-fullscreen');
+			const pullProgress = document.getElementById('image-pull-progress');
+			
+			function formatBytes(bytes) {
+				if (bytes === 0) return '0 MB';
+				const mb = bytes / (1024 * 1024);
+				return mb.toFixed(2) + ' MB';
+			}
+
+			function formatBytesDynamic(bytes) {
+				if (bytes === 0) return '0 KB';
+				if (bytes < 1024 * 1024) {
+					return Math.round(bytes / 1024) + ' KB';
+				}
+				return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+			}
+
+			function formatTime(seconds) {
+				if (seconds < 60) return Math.round(seconds) + 's';
+				if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + Math.round(seconds % 60) + 's';
+				return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+			}
+
+			function updatePullProgress(data) {
+				pullProgress.classList.remove('hidden');
+				
+				document.getElementById('pull-percentage').textContent = data.percentage.toFixed(1) + '%';
+				document.getElementById('pull-bar').style.width = data.percentage + '%';
+				document.getElementById('pull-downloaded').textContent = formatBytes(data.downloaded_bytes);
+				document.getElementById('pull-total').textContent = formatBytes(data.total_bytes);
+				document.getElementById('pull-speed').textContent = data.speed_mbps.toFixed(2) + ' MB/s';
+				
+				if (data.eta_seconds > 0 && data.eta_seconds < 86400) {
+					document.getElementById('pull-eta').textContent = formatTime(data.eta_seconds);
+				} else {
+					document.getElementById('pull-eta').textContent = '—';
+				}
+				
+				document.getElementById('pull-layers').textContent = 'Layer ' + data.completed_layers + '/' + data.total_layers;
+				document.getElementById('pull-image').textContent = data.image || '';
+				document.getElementById('pull-image').title = data.image || '';
+
+				if (data.status === 'pulling') {
+					document.getElementById('pull-status').textContent = 'Pulling image...';
+				} else if (data.status === 'completed') {
+					document.getElementById('pull-status').textContent = 'Pull completed!';
+					document.getElementById('pull-status').classList.add('text-green-400');
+					setTimeout(() => {
+						pullProgress.classList.add('hidden');
+						document.getElementById('pull-status').classList.remove('text-green-400');
+					}, 3000);
+				} else if (data.status === 'error') {
+					document.getElementById('pull-status').textContent = 'Error: ' + data.error;
+					document.getElementById('pull-status').classList.add('text-red-400');
+				}
+			}
 			
 			function connect() {
 				ws = new WebSocket(wsUrl);
@@ -164,13 +299,27 @@ script webSocketScriptContent(serverID string) {
 				try {
 					const msg = JSON.parse(ev.data);
 					if (msg.type === 'log') {
-						consoleOut.appendChild(document.createTextNode(msg.data));
-						consoleOut.scrollTop = consoleOut.scrollHeight;
+						const logLine = msg.data;
+						if (logLine.startsWith('[json]')) {
+							try {
+								const jsonMsg = JSON.parse(logLine.substring(6));
+								if (jsonMsg.type === 'image_pull') {
+									updatePullProgress(jsonMsg.data);
+								}
+							} catch (e) {}
+						} else {
+							consoleOut.appendChild(document.createTextNode(logLine));
+							consoleOut.scrollTop = consoleOut.scrollHeight;
+							if (consoleOutFullscreen) {
+								consoleOutFullscreen.appendChild(document.createTextNode(logLine));
+								consoleOutFullscreen.scrollTop = consoleOutFullscreen.scrollHeight;
+							}
+						}
 					} else if (msg.type === 'stats' && msg.data) {
 						document.getElementById('cpu-value').textContent = msg.data.cpu || '—';
 						document.getElementById('mem-value').textContent = msg.data.mem || '—';
-						document.getElementById('rx-value').textContent = msg.data.rx || '—';
-						document.getElementById('tx-value').textContent = msg.data.tx || '—';
+						document.getElementById('rx-value').textContent = msg.data.rx ? formatBytesDynamic(msg.data.rx) : '—';
+						document.getElementById('tx-value').textContent = msg.data.tx ? formatBytesDynamic(msg.data.tx) : '—';
 					}
 				} catch (_) {}
 			};
@@ -181,7 +330,7 @@ script webSocketScriptContent(serverID string) {
 		}
 		
 		connect();
-		
+
 		consoleForm.addEventListener('submit', function(e) {
 			e.preventDefault();
 			const cmd = (consoleInput.value || '').trim();
@@ -189,6 +338,17 @@ script webSocketScriptContent(serverID string) {
 			ws.send(JSON.stringify({ type: 'command', data: cmd }));
 			consoleInput.value = '';
 		});
+
+		const consoleFormFullscreen = document.getElementById('console-form-fullscreen');
+		if (consoleFormFullscreen) {
+			consoleFormFullscreen.addEventListener('submit', function(e) {
+				e.preventDefault();
+				const cmd = (consoleInputFullscreen.value || '').trim();
+				if (!cmd || !ws || ws.readyState !== WebSocket.OPEN) return;
+				ws.send(JSON.stringify({ type: 'command', data: cmd }));
+				consoleInputFullscreen.value = '';
+			});
+		}
 	})();
 }
 
