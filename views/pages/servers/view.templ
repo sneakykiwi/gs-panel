@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-templ ViewPage(server *models.Server, user *models.User) {
+templ ViewPage(server *models.Server, user *models.User, isOutdated bool, newVersion string) {
 	@layouts.Base(server.Name, user) {
 		<div class="flex h-screen">
 			@components.Sidebar(user)
@@ -17,7 +17,26 @@ templ ViewPage(server *models.Server, user *models.User) {
 				<div class="mb-6">
 					<a href="/" class="text-gray-400 hover:text-white text-sm">← Back to Dashboard</a>
 				</div>
-				
+
+				if isOutdated && user.IsAdmin {
+					<div class="mb-6 bg-blue-500/20 border border-blue-500 rounded-lg p-4 flex items-center justify-between">
+						<div>
+							<p class="font-medium text-blue-300">Template Update Available</p>
+							<p class="text-sm text-blue-200/70">
+								Current: { server.TemplateVersion } → New: { newVersion }
+							</p>
+						</div>
+						<form method="POST" action={ templ.URL("/servers/" + server.ID + "/upgrade") }>
+							<button
+								type="submit"
+								class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm transition"
+							>
+								Upgrade Template
+							</button>
+						</form>
+					</div>
+				}
+
 				<div class="flex justify-between items-start mb-8">
 					<div>
 						<h1 class="text-3xl font-bold">{ server.Name }</h1>

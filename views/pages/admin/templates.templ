@@ -1,0 +1,91 @@
+package admin
+
+import (
+	"strconv"
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/views/layouts"
+	"github.com/sneakykiwi/gs-panel/views/components"
+)
+
+templ TemplatesPage(user *models.User, templates []services.GameTemplate) {
+	@layouts.Base("Templates", user) {
+		<div class="flex h-screen">
+			@components.Sidebar(user)
+
+			<main class="flex-1 p-8 overflow-auto">
+				<div class="flex justify-between items-center mb-8">
+					<h1 class="text-3xl font-bold">Game Templates</h1>
+					<div class="flex gap-3">
+						<a
+							href="/admin/templates/new"
+							class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition"
+						>
+							+ New Template
+						</a>
+						<form method="POST" action="/admin/templates/reload" class="inline">
+							<button
+								type="submit"
+								class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded transition"
+							>
+								↻ Reload
+							</button>
+						</form>
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					for _, t := range templates {
+						<div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+							<div class="flex justify-between items-start mb-4">
+								<div>
+									<h3 class="text-lg font-bold">{ t.Name }</h3>
+									<p class="text-gray-400 text-sm font-mono">{ t.ID }</p>
+								</div>
+								if t.IsBuiltIn {
+									<span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded">Built-in</span>
+								} else {
+									<span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded">Custom</span>
+								}
+							</div>
+
+							<div class="text-sm text-gray-400 space-y-1 mb-4">
+								<p><span class="text-gray-500">Image:</span> { t.DockerImage }</p>
+								<p><span class="text-gray-500">Port:</span> { strconv.Itoa(t.DefaultPort) }</p>
+								<p><span class="text-gray-500">Memory:</span> { strconv.Itoa(t.DefaultMemory) } MB</p>
+								<p><span class="text-gray-500">Version:</span> { t.Version }</p>
+							</div>
+
+							<div class="flex gap-2">
+								<a
+									href={ templ.URL("/admin/templates/" + t.ID + "/clone") }
+									class="flex-1 text-center bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm transition"
+								>
+									Clone
+								</a>
+								if !t.IsBuiltIn {
+									<a
+										href={ templ.URL("/admin/templates/" + t.ID + "/edit") }
+										class="flex-1 text-center bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm transition"
+									>
+										Edit
+									</a>
+									<form method="POST" action={ templ.URL("/admin/templates/" + t.ID + "/delete") } class="flex-1">
+										<button
+											type="submit"
+											class="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-sm transition"
+											onclick="return confirm('Delete this template?')"
+										>
+											Delete
+										</button>
+									</form>
+								}
+							</div>
+						</div>
+					}
+				</div>
+			</main>
+		</div>
+	}
+}
+

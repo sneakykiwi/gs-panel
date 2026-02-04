@@ -1,0 +1,17 @@
+id: minecraft-java
+name: "Minecraft: Java Edition"
+version: "1.0.0"
+docker_image: itzg/minecraft-server:latest
+default_port: 25565
+default_memory: 2048
+protocol: both
+environment:
+  EULA: "TRUE"
+  TYPE: "VANILLA"
+  MAX_MEMORY: "{{MEMORY}}M"
+stop_command: stop
+save_command: save-all
+stop_timeout: 30
+var_descriptions:
+  TYPE: "Server type (VANILLA, PAPER, SPIGOT, FORGE, FABRIC, etc.)"
+  MAX_MEMORY: "Maximum memory allocation"

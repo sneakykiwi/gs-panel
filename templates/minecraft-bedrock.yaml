@@ -1,0 +1,16 @@
+id: minecraft-bedrock
+name: "Minecraft: Bedrock Edition"
+version: "1.0.0"
+docker_image: itzg/minecraft-bedrock-server:latest
+default_port: 19132
+default_memory: 1024
+protocol: udp
+environment:
+  EULA: "TRUE"
+  GAMEMODE: "survival"
+  DIFFICULTY: "normal"
+stop_command: stop
+stop_timeout: 30
+var_descriptions:
+  GAMEMODE: "Game mode (survival, creative, adventure)"
+  DIFFICULTY: "Difficulty level (peaceful, easy, normal, hard)"

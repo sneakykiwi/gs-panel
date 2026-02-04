@@ -2,43 +2,44 @@ package servers
 
 import (
 	"fmt"
+	"strings"
 	"github.com/sneakykiwi/gs-panel/internal/models"
 	"github.com/sneakykiwi/gs-panel/internal/services"
 	"github.com/sneakykiwi/gs-panel/views/components"
 	"github.com/sneakykiwi/gs-panel/views/layouts"
 )
 
+func formatEnvValue(value string) string {
+	if strings.Contains(value, "{{MEMORY}}") {
+		return strings.ReplaceAll(value, "{{MEMORY}}", "[Memory Limit]")
+	}
+	return value
+}
+
 templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg string) {
 	@layouts.Base("Create Server", user) {
 		<div class="flex h-screen">
 			@components.Sidebar(user)
-
 			<main class="flex-1 p-8 overflow-auto">
-				<div class="max-w-2xl mx-auto">
+				<div class="max-w-4xl mx-auto" x-data="{ selected: '', showAdvancedWarning: false }">
 					<h1 class="text-3xl font-bold mb-8">Create New Server</h1>
-
 					if errorMsg != "" {
 						<div class="bg-red-500/20 border border-red-500 text-red-300 px-4 py-3 rounded mb-6">
 							{ errorMsg }
 						</div>
 					}
-
 					<form method="POST" action="/servers" class="bg-gray-800 rounded-lg p-6 border border-gray-700">
 						@components.CsrfToken()
 						<div class="mb-6">
 							<label class="block text-sm font-medium mb-2" for="name">Server Name</label>
-							<input type="text" id="name" name="name" required
-								class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-								placeholder="My Minecraft Server"/>
+							<input type="text" id="name" name="name" required class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500" placeholder="My Minecraft Server"/>
 						</div>
-
-						<div class="mb-6" x-data="{selected: ''}">
-							<label class="block text-sm font-medium mb-2">Game</label>
-							<div class="grid grid-cols-2 gap-3">
+						<div class="mb-6">
+							<label class="block text-sm font-medium mb-2">Game Template</label>
+							<div class="grid grid-cols-2 md:grid-cols-3 gap-3">
 								for _, t := range templates {
 									<label class="cursor-pointer">
-										<input type="radio" name="game_type" value={ t.ID } class="sr-only peer" required
-											x-on:change={ fmt.Sprintf("selected = '%s'", t.ID) }/>
+										<input type="radio" name="game_type" value={ t.ID } class="sr-only peer" required x-on:change="selected = $event.target.value"/>
 										<div class="p-4 bg-gray-700 border border-gray-600 rounded hover:border-blue-500 peer-checked:border-blue-500 peer-checked:bg-blue-500/10 transition">
 											<p class="font-medium">{ t.Name }</p>
 											<p class="text-sm text-gray-400">Port: { fmt.Sprintf("%d", t.DefaultPort) }</p>
@@ -47,34 +48,93 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 								}
 							</div>
 						</div>
-
-						<div class="mb-6">
-							<label class="block text-sm font-medium mb-2" for="memory_limit">Memory Limit (MB)</label>
-							<input type="number" id="memory_limit" name="memory_limit" min="512" step="256"
-								class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-								placeholder="2048"/>
-							<p class="text-sm text-gray-400 mt-1">Leave empty for game default</p>
+						<div class="grid grid-cols-2 gap-4 mb-6">
+							<div>
+								<label class="block text-sm font-medium mb-2" for="memory_limit">Memory Limit (MB)</label>
+								<input type="number" id="memory_limit" name="memory_limit" min="512" step="256" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500" placeholder="2048"/>
+								<p class="text-sm text-gray-400 mt-1">Leave empty for default</p>
+							</div>
+							<div>
+								<label class="block text-sm font-medium mb-2" for="port">Port</label>
+								<input type="number" id="port" name="port" min="1024" max="65535" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500" placeholder="Auto"/>
+								<p class="text-sm text-gray-400 mt-1">Leave empty for default</p>
+							</div>
 						</div>
-
-						<div class="mb-6">
-							<label class="block text-sm font-medium mb-2" for="port">Port</label>
-							<input type="number" id="port" name="port" min="1024" max="65535"
-								class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500"
-								placeholder="Leave empty for game default"/>
-							<p class="text-sm text-gray-400 mt-1">Leave empty for game default</p>
+						<div x-show="selected" x-cloak class="mb-6 border-t border-gray-700 pt-6">
+							<h3 class="text-lg font-medium mb-4">Environment Variables</h3>
+							for _, t := range templates {
+								if len(t.Environment) > 0 {
+									<div x-show={ fmt.Sprintf("selected === $el.dataset.templateId") } data-template-id={ t.ID } class="space-y-4">
+										for key, value := range t.Environment {
+											<div>
+												<label class="block text-sm font-medium mb-1">
+													{ key }
+													if t.VarDescriptions != nil && t.VarDescriptions[key] != "" {
+														<span class="text-gray-500 font-normal ml-2 cursor-help" title={ t.VarDescriptions[key] }>ⓘ</span>
+													}
+												</label>
+												if strings.Contains(value, "{{MEMORY}}") {
+													<div class="flex items-center gap-2">
+														<input type="text" name={ "env_" + key } placeholder={ formatEnvValue(value) } class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"/>
+														<span class="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded whitespace-nowrap">Auto: Memory</span>
+													</div>
+												} else {
+													<input type="text" name={ "env_" + key } placeholder={ value } class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-sm"/>
+												}
+												if t.VarDescriptions != nil && t.VarDescriptions[key] != "" {
+													<p class="text-gray-500 text-xs mt-1">{ t.VarDescriptions[key] }</p>
+												}
+											</div>
+										}
+									</div>
+								}
+							}
+							<p class="text-sm text-gray-400 mt-4">Leave empty to use default values</p>
 						</div>
-
 						<div class="flex gap-4">
-							<button type="submit"
-								class="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded transition">
+							<button type="submit" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded transition">
 								Create Server
 							</button>
-							<a href="/"
-								class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition text-center">
+							<button type="button" x-show="selected" @click="showAdvancedWarning = true" class="bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded transition">
+								Advanced: Edit Template
+							</button>
+							<a href="/" class="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition text-center">
 								Cancel
 							</a>
 						</div>
 					</form>
+					<div x-show="showAdvancedWarning" x-cloak class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="showAdvancedWarning = false">
+						<div class="bg-gray-800 rounded-lg p-6 border border-gray-700 max-w-lg mx-4">
+							<div class="flex items-center gap-3 mb-4">
+								<div class="bg-yellow-500/20 p-2 rounded-full">
+									<svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+									</svg>
+								</div>
+								<h3 class="text-xl font-bold text-yellow-400">Advanced Mode</h3>
+							</div>
+							<div class="space-y-4 text-gray-300">
+								<p>This will open the full YAML template editor for the selected game. You will be creating a custom template based on the original.</p>
+								<div class="bg-red-500/10 border border-red-500/30 rounded p-3">
+									<p class="text-red-300 text-sm font-medium mb-2">Warning</p>
+									<ul class="text-red-200/80 text-sm space-y-1 list-disc list-inside">
+										<li>Incorrect configuration can prevent your server from starting</li>
+										<li>You are responsible for ensuring Docker image compatibility</li>
+										<li>Template variables and port mappings must be valid</li>
+									</ul>
+								</div>
+								<p class="text-sm text-gray-400">Your custom template will be saved and can be reused for future servers.</p>
+							</div>
+							<div class="flex gap-3 mt-6">
+								<a x-bind:href="'/servers/new/advanced?template=' + selected" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded transition text-center">
+									I Understand, Continue
+								</a>
+								<button type="button" @click="showAdvancedWarning = false" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition">
+									Cancel
+								</button>
+							</div>
+						</div>
+					</div>
 				</div>
 			</main>
 		</div>

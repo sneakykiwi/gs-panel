@@ -55,7 +55,15 @@ func main() {
 	defer dockerClient.Close()
 	logger.Info().Msg("Docker client connected")
 
-	templateService := services.NewTemplateService()
+	templateService := services.NewTemplateService(
+		cfg.Storage.DefaultTemplates,
+		cfg.Storage.UserTemplates,
+		&services.SecurityConfig{
+			AllowedMountPrefixes: cfg.Security.AllowedMountPrefixes,
+			AllowedCapAdds:       cfg.Security.AllowedCapAdds,
+			EnablePerUserMounts:  cfg.Security.EnablePerUserMounts,
+		},
+	)
 	authService := services.NewAuthService(db)
 	consoleService := services.NewConsoleService(dockerClient)
 	logService := services.NewLogService(cfg.Storage.Servers, dockerClient)
@@ -116,11 +124,12 @@ func main() {
 	}))
 
 	authHandler := handlers.NewAuthHandler(authService)
-	serverHandler := handlers.NewServerHandler(serverService, templateService)
+	serverHandler := handlers.NewServerHandler(serverService, templateService, cfg)
 	backupHandler := handlers.NewBackupHandler(backupService, serverService, schedulerService, cfg)
 	adminHandler := handlers.NewAdminHandler(authService, serverService)
 	filesHandler := handlers.NewFilesHandler(serverService, cfg)
 	logHandler := handlers.NewLogHandler(serverService, logService)
+	templateHandler := handlers.NewTemplateHandler(templateService)
 
 	app.Get("/version", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -140,9 +149,12 @@ func main() {
 	protected := app.Group("", middleware.Auth(authService))
 	protected.Get("/", serverHandler.Dashboard)
 	protected.Get("/servers/new", serverHandler.CreatePage)
+	protected.Get("/servers/new/advanced", serverHandler.CreateAdvancedPage)
+	protected.Post("/servers/new/advanced", serverHandler.CreateAdvanced)
 	protected.Post("/servers", serverHandler.Create)
 	protected.Get("/servers/:id", serverHandler.View)
 	protected.Get("/servers/:id/edit", serverHandler.EditPage)
+	protected.Get("/servers/:id/template", serverHandler.ViewTemplateConfig)
 	protected.Put("/servers/:id", serverHandler.Update)
 	protected.Post("/servers/:id/start", serverHandler.Start)
 	protected.Post("/servers/:id/stop", serverHandler.Stop)
@@ -183,6 +195,7 @@ func main() {
 
 	admin := protected.Group("", middleware.AdminOnly())
 	admin.Delete("/servers/:id", serverHandler.Delete)
+	admin.Post("/servers/:id/upgrade", serverHandler.Upgrade)
 	admin.Get("/admin/users", adminHandler.UsersPage)
 	admin.Get("/admin/users/new", adminHandler.CreateUserPage)
 	admin.Post("/admin/users", adminHandler.CreateUser)
@@ -191,6 +204,20 @@ func main() {
 	admin.Get("/admin/users/:id/servers", adminHandler.UserServersPage)
 	admin.Post("/admin/users/:id/servers", adminHandler.AssignServer)
 	admin.Delete("/admin/users/:id/servers/:serverId", adminHandler.UnassignServer)
+	admin.Get("/admin/templates", templateHandler.ListPage)
+	admin.Get("/admin/templates/new", templateHandler.CreatePage)
+	admin.Post("/admin/templates/new", templateHandler.CreateFromYAML)
+	admin.Post("/admin/templates/reload", templateHandler.Reload)
+	admin.Get("/admin/templates/:id/edit", templateHandler.EditPage)
+	admin.Post("/admin/templates/:id/edit", templateHandler.UpdateYAML)
+	admin.Get("/admin/templates/:id/clone", templateHandler.ClonePage)
+	admin.Post("/admin/templates/:id/clone", templateHandler.Clone)
+	admin.Post("/admin/templates/:id/delete", templateHandler.DeletePage)
+	admin.Get("/api/templates", templateHandler.List)
+	admin.Get("/api/templates/:id", templateHandler.Get)
+	admin.Post("/api/templates", templateHandler.Create)
+	admin.Put("/api/templates/:id", templateHandler.Update)
+	admin.Delete("/api/templates/:id", templateHandler.Delete)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	logger.Info().Str("address", addr).Msg("Listening on")

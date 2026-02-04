@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -60,11 +61,57 @@ func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, te
 	}
 }
 
+func (s *ServerService) GetServerTemplate(server *models.Server) (GameTemplate, bool) {
+	if server.TemplateConfig != "" {
+		var template GameTemplate
+		if err := json.Unmarshal([]byte(server.TemplateConfig), &template); err != nil {
+			logger.Warn().Str("server_id", server.ID).Msg("Failed to parse stored template config, falling back to template files")
+		} else {
+			serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
+			if err := s.templates.ValidateTemplate(&template, serverPath); err != nil {
+				logger.Warn().Str("server_id", server.ID).Err(err).Msg("Stored template config failed validation, falling back")
+			} else {
+				return template, true
+			}
+		}
+	}
+
+	template, ok := s.templates.Get(server.GameType)
+	if ok {
+		serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
+		if err := s.templates.ValidateTemplate(&template, serverPath); err != nil {
+			logger.Warn().Str("server_id", server.ID).Err(err).Msg("Failed to validate template, not setting")
+			return GameTemplate{}, false
+		}
+		s.SetServerTemplate(server, template)
+		s.db.Save(server)
+	}
+	return template, ok
+}
+
+func (s *ServerService) SetServerTemplate(server *models.Server, template GameTemplate) error {
+	data, err := json.Marshal(template)
+	if err != nil {
+		return fmt.Errorf("failed to serialize template config: %w", err)
+	}
+	server.TemplateConfig = string(data)
+	return nil
+}
+
+func (s *ServerService) GetServerTemplateYAML(server *models.Server) (string, error) {
+	template, ok := s.GetServerTemplate(server)
+	if !ok {
+		return "", fmt.Errorf("no template config found for server")
+	}
+	return s.templates.TemplateToYAML(template), nil
+}
+
 type CreateServerRequest struct {
 	Name        string
 	GameType    string
 	MemoryLimit int
 	Port        int
+	CustomVars  map[string]string
 }
 
 func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) {
@@ -86,20 +133,49 @@ func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) 
 		return nil, err
 	}
 
+	if err := s.templates.ValidateTemplate(&template, serverPath); err != nil {
+		os.RemoveAll(serverPath)
+		return nil, err
+	}
+
+	proposedPorts := s.GetPortsFromTemplate(template, req.Port)
+	if err := s.ValidatePorts(proposedPorts, ""); err != nil {
+		os.RemoveAll(serverPath)
+		return nil, err
+	}
+
 	env := make(map[string]string)
 	for k, v := range template.Environment {
-		env[k] = strings.ReplaceAll(v, "{{MEMORY}}", strconv.Itoa(req.MemoryLimit))
+		v = strings.ReplaceAll(v, "{{MEMORY}}", strconv.Itoa(req.MemoryLimit))
+		v = strings.ReplaceAll(v, "{{PORT}}", strconv.Itoa(req.Port))
+		v = strings.ReplaceAll(v, "{{SERVER_ID}}", serverID)
+		v = strings.ReplaceAll(v, "{{SERVER_NAME}}", req.Name)
+		env[k] = v
+	}
+
+	var customEnvStr string
+	if len(req.CustomVars) > 0 {
+		customEnvStr = s.templates.EncodeEnvironment(req.CustomVars)
+	}
+
+	templateConfigData, err := json.Marshal(template)
+	if err != nil {
+		os.RemoveAll(serverPath)
+		return nil, fmt.Errorf("failed to serialize template config: %w", err)
 	}
 
 	server := &models.Server{
-		ID:          serverID,
-		Name:        req.Name,
-		GameType:    req.GameType,
-		DockerImage: template.DockerImage,
-		Port:        req.Port,
-		MemoryLimit: req.MemoryLimit,
-		Status:      models.ServerStatusStopped,
-		Environment: s.templates.EncodeEnvironment(env),
+		ID:                serverID,
+		Name:              req.Name,
+		GameType:          req.GameType,
+		DockerImage:       template.DockerImage,
+		Port:              req.Port,
+		MemoryLimit:       req.MemoryLimit,
+		Status:            models.ServerStatusStopped,
+		Environment:       s.templates.EncodeEnvironment(env),
+		CustomEnvironment: customEnvStr,
+		TemplateVersion:   template.Version,
+		TemplateConfig:    string(templateConfigData),
 	}
 
 	if err := s.db.Create(server).Error; err != nil {
@@ -201,12 +277,20 @@ func (s *ServerService) Stop(id string) error {
 		return nil
 	}
 
-	// Notify console service that server is stopping
-	if s.consoleService != nil {
+	template, _ := s.GetServerTemplate(server)
+
+	if s.consoleService != nil && server.Status == models.ServerStatusRunning {
+		if template.SaveCommand != "" {
+			s.consoleService.SendCommand(server.ID, template.SaveCommand)
+			time.Sleep(2 * time.Second)
+		}
+		if template.StopCommand != "" {
+			s.consoleService.SendCommand(server.ID, template.StopCommand)
+			time.Sleep(3 * time.Second)
+		}
 		s.consoleService.StopSession(server.ID)
 	}
 
-	// Save container logs before stopping - track error to report after successful stop
 	var logSaveErr error
 	ctx := context.Background()
 	if s.logService != nil && server.ContainerID != "" {
@@ -216,7 +300,10 @@ func (s *ServerService) Stop(id string) error {
 		}
 	}
 
-	timeout := 30
+	timeout := template.StopTimeout
+	if timeout <= 0 {
+		timeout = 30
+	}
 	_, err = s.docker.ContainerStop(ctx, server.ContainerID, client.ContainerStopOptions{Timeout: &timeout})
 	if err != nil {
 		return err
@@ -227,7 +314,6 @@ func (s *ServerService) Stop(id string) error {
 		return err
 	}
 
-	// Return log save error after successful stop so caller can warn user
 	if logSaveErr != nil {
 		return &ErrLogSaveFailed{Err: logSaveErr}
 	}
@@ -256,6 +342,8 @@ func (s *ServerService) Restart(id string) error {
 }
 
 func (s *ServerService) createContainer(ctx context.Context, server *models.Server) (string, error) {
+	template, _ := s.GetServerTemplate(server)
+
 	pullResp, err := s.docker.ImagePull(ctx, server.DockerImage, client.ImagePullOptions{})
 	if err != nil {
 		return "", err
@@ -263,6 +351,10 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 	pullResp.Close()
 
 	env := s.templates.DecodeEnvironment(server.Environment)
+	customEnv := s.templates.DecodeEnvironment(server.CustomEnvironment)
+	for k, v := range customEnv {
+		env[k] = v
+	}
 	envList := make([]string, 0, len(env))
 	for k, v := range env {
 		envList = append(envList, fmt.Sprintf("%s=%s", k, v))
@@ -281,17 +373,73 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 		return "", fmt.Errorf("server data directory not found: %s (%w)", serverPath, err)
 	}
 
-	tcpPort := network.MustParsePort(fmt.Sprintf("%d/tcp", server.Port))
-	udpPort := network.MustParsePort(fmt.Sprintf("%d/udp", server.Port))
+	exposedPorts := make(network.PortSet)
+	portBindings := make(network.PortMap)
 	portStr := fmt.Sprintf("%d", server.Port)
+	hostIP := netip.MustParseAddr("0.0.0.0")
+
+	protocol := template.Protocol
+	if protocol == "" {
+		protocol = "both"
+	}
+
+	if protocol == "tcp" || protocol == "both" {
+		tcpPort := network.MustParsePort(fmt.Sprintf("%d/tcp", server.Port))
+		exposedPorts[tcpPort] = struct{}{}
+		portBindings[tcpPort] = []network.PortBinding{{HostIP: hostIP, HostPort: portStr}}
+	}
+	if protocol == "udp" || protocol == "both" {
+		udpPort := network.MustParsePort(fmt.Sprintf("%d/udp", server.Port))
+		exposedPorts[udpPort] = struct{}{}
+		portBindings[udpPort] = []network.PortBinding{{HostIP: hostIP, HostPort: portStr}}
+	}
+
+	for _, p := range template.AdditionalPorts {
+		pStr := fmt.Sprintf("%d", p.Port)
+		pProtocol := strings.ToLower(p.Protocol)
+		if pProtocol == "" {
+			pProtocol = "both"
+		}
+		if pProtocol == "tcp" || pProtocol == "both" {
+			port := network.MustParsePort(fmt.Sprintf("%d/tcp", p.Port))
+			exposedPorts[port] = struct{}{}
+			portBindings[port] = []network.PortBinding{{HostIP: hostIP, HostPort: pStr}}
+		}
+		if pProtocol == "udp" || pProtocol == "both" {
+			port := network.MustParsePort(fmt.Sprintf("%d/udp", p.Port))
+			exposedPorts[port] = struct{}{}
+			portBindings[port] = []network.PortBinding{{HostIP: hostIP, HostPort: pStr}}
+		}
+	}
+
+	mounts := []mount.Mount{
+		{
+			Type:   mount.TypeBind,
+			Source: serverPath,
+			Target: "/data",
+		},
+	}
+
+	for _, vol := range template.Volumes {
+		hostPath := vol.Host
+		if !filepath.IsAbs(hostPath) {
+			hostPath = filepath.Join(serverPath, hostPath)
+		}
+		hostPath = filepath.Clean(hostPath)
+
+		readOnly := strings.ToLower(vol.Mode) == "ro"
+		mounts = append(mounts, mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   hostPath,
+			Target:   vol.Container,
+			ReadOnly: readOnly,
+		})
+	}
 
 	containerConfig := &container.Config{
-		Image: server.DockerImage,
-		Env:   envList,
-		ExposedPorts: network.PortSet{
-			tcpPort: {},
-			udpPort: {},
-		},
+		Image:        server.DockerImage,
+		Env:          envList,
+		ExposedPorts: exposedPorts,
 		Tty:          true,
 		OpenStdin:    true,
 		AttachStdin:  true,
@@ -299,24 +447,49 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 		AttachStderr: true,
 	}
 
+	if len(template.Entrypoint) > 0 {
+		containerConfig.Entrypoint = template.Entrypoint
+	}
+	if len(template.Cmd) > 0 {
+		containerConfig.Cmd = template.Cmd
+	}
+	if template.User != "" {
+		containerConfig.User = template.User
+	}
+	if template.StopSignal != "" {
+		containerConfig.StopSignal = template.StopSignal
+	}
+	if len(template.Labels) > 0 {
+		containerConfig.Labels = template.Labels
+	}
+
+	if template.HealthCheck != nil {
+		containerConfig.Healthcheck = &container.HealthConfig{
+			Test:          template.HealthCheck.Test,
+			Interval:      template.HealthCheck.Interval,
+			Timeout:       template.HealthCheck.Timeout,
+			Retries:       template.HealthCheck.Retries,
+			StartPeriod:   template.HealthCheck.StartPeriod,
+			StartInterval: 0,
+		}
+	}
+
 	hostConfig := &container.HostConfig{
-		PortBindings: network.PortMap{
-			tcpPort: []network.PortBinding{{HostIP: netip.MustParseAddr("0.0.0.0"), HostPort: portStr}},
-			udpPort: []network.PortBinding{{HostIP: netip.MustParseAddr("0.0.0.0"), HostPort: portStr}},
-		},
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeBind,
-				Source: serverPath,
-				Target: "/data",
-			},
-		},
+		PortBindings: portBindings,
+		Mounts:       mounts,
 		Resources: container.Resources{
 			Memory: int64(server.MemoryLimit) * 1024 * 1024,
 		},
 		RestartPolicy: container.RestartPolicy{
 			Name: container.RestartPolicyUnlessStopped,
 		},
+	}
+
+	if len(template.CapAdd) > 0 {
+		hostConfig.CapAdd = template.CapAdd
+	}
+	if template.NetworkMode != "" {
+		hostConfig.NetworkMode = container.NetworkMode(template.NetworkMode)
 	}
 
 	networkConfig := &network.NetworkingConfig{}
@@ -394,6 +567,7 @@ type UpdateServerRequest struct {
 	Name        string
 	MemoryLimit int
 	Port        int
+	CustomVars  map[string]string
 }
 
 func (s *ServerService) Update(id string, req UpdateServerRequest) error {
@@ -402,15 +576,42 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 		return err
 	}
 
-	if req.Port != server.Port {
-		if err := s.ValidatePort(req.Port, id); err != nil {
-			return err
+	template, ok := s.GetServerTemplate(server)
+	if !ok {
+		return fmt.Errorf("no template found for server")
+	}
+
+	proposedPort := req.Port
+	if proposedPort == 0 {
+		proposedPort = server.Port
+	}
+
+	proposedPorts := s.GetPortsFromTemplate(template, proposedPort)
+	if err := s.ValidatePorts(proposedPorts, id); err != nil {
+		return err
+	}
+
+	// Check if custom variables have actually changed
+	currentCustomVars := s.templates.DecodeEnvironment(server.CustomEnvironment)
+	customVarsChanged := false
+	if req.CustomVars != nil {
+		if len(currentCustomVars) != len(req.CustomVars) {
+			customVarsChanged = true
+		} else {
+			for k, v := range req.CustomVars {
+				cv, ok := currentCustomVars[k]
+				if !ok || cv != v {
+					customVarsChanged = true
+					break
+				}
+			}
 		}
 	}
 
 	isRunning := server.Status == models.ServerStatusRunning
+	needsRestart := isRunning && (proposedPort != server.Port || req.MemoryLimit != server.MemoryLimit || customVarsChanged)
 
-	if isRunning {
+	if needsRestart {
 		if err := s.Stop(id); err != nil {
 			return fmt.Errorf("failed to stop server: %w", err)
 		}
@@ -418,7 +619,7 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 
 	server.Name = req.Name
 	server.MemoryLimit = req.MemoryLimit
-	server.Port = req.Port
+	server.Port = proposedPort
 
 	env := s.templates.DecodeEnvironment(server.Environment)
 	for k, v := range env {
@@ -426,11 +627,15 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 	}
 	server.Environment = s.templates.EncodeEnvironment(env)
 
+	if req.CustomVars != nil {
+		server.CustomEnvironment = s.templates.EncodeEnvironment(req.CustomVars)
+	}
+
 	if err := s.db.Save(server).Error; err != nil {
 		return fmt.Errorf("failed to update server: %w", err)
 	}
 
-	if isRunning {
+	if needsRestart {
 		if err := s.Start(id); err != nil {
 			return fmt.Errorf("server updated but failed to restart: %w", err)
 		}
@@ -439,14 +644,15 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 	return nil
 }
 
-func (s *ServerService) ValidatePort(port int, excludeServerID string) error {
-	var count int64
-	s.db.Model(&models.Server{}).
-		Where("port = ? AND id != ? AND deleted_at IS NULL", port, excludeServerID).
-		Count(&count)
-
-	if count > 0 {
-		return errors.New("port already in use by another server")
+func (s *ServerService) ValidatePorts(ports []int, excludeServerID string) error {
+	usedPorts, err := s.GetAllUsedPorts(excludeServerID)
+	if err != nil {
+		return err
+	}
+	for _, p := range ports {
+		if _, ok := usedPorts[p]; ok {
+			return fmt.Errorf("port %d is already in use", p)
+		}
 	}
 	return nil
 }
@@ -454,4 +660,146 @@ func (s *ServerService) ValidatePort(port int, excludeServerID string) error {
 func (s *ServerService) HasAccess(userID, serverID string) bool {
 	hasAccess, _ := s.UserHasAccess(userID, serverID)
 	return hasAccess
+}
+
+func (s *ServerService) IsTemplateOutdated(server *models.Server) bool {
+	template, ok := s.templates.Get(server.GameType)
+	if !ok {
+		return false
+	}
+	return server.TemplateVersion != template.Version
+}
+
+func (s *ServerService) GetTemplateVersion(gameType string) string {
+	template, ok := s.templates.Get(gameType)
+	if !ok {
+		return ""
+	}
+	return template.Version
+}
+
+func (s *ServerService) UpgradeTemplate(id string) error {
+	server, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+
+	template, ok := s.templates.Get(server.GameType)
+	if !ok {
+		return fmt.Errorf("unknown game type: %s", server.GameType)
+	}
+
+	serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
+	if err := s.templates.ValidateTemplate(&template, serverPath); err != nil {
+		return err
+	}
+
+	proposedPorts := s.GetPortsFromTemplate(template, server.Port)
+	if err := s.ValidatePorts(proposedPorts, server.ID); err != nil {
+		return err
+	}
+
+	if server.TemplateVersion == template.Version {
+		return nil
+	}
+
+	isRunning := server.Status == models.ServerStatusRunning
+	if isRunning {
+		if err := s.Stop(id); err != nil {
+			return fmt.Errorf("failed to stop server: %w", err)
+		}
+	}
+
+	if server.ContainerID != "" {
+		ctx := context.Background()
+		if _, err := s.docker.ContainerRemove(ctx, server.ContainerID, client.ContainerRemoveOptions{Force: true}); err != nil {
+			return fmt.Errorf("failed to remove container: %w", err)
+		}
+		server.ContainerID = ""
+	}
+
+	env := make(map[string]string)
+	for k, v := range template.Environment {
+		v = strings.ReplaceAll(v, "{{MEMORY}}", strconv.Itoa(server.MemoryLimit))
+		v = strings.ReplaceAll(v, "{{PORT}}", strconv.Itoa(server.Port))
+		v = strings.ReplaceAll(v, "{{SERVER_ID}}", server.ID)
+		v = strings.ReplaceAll(v, "{{SERVER_NAME}}", server.Name)
+		env[k] = v
+	}
+
+	if server.CustomEnvironment != "" {
+		for k, v := range s.templates.DecodeEnvironment(server.CustomEnvironment) {
+			env[k] = v
+		}
+	}
+	server.Environment = s.templates.EncodeEnvironment(env)
+	server.DockerImage = template.DockerImage
+	server.TemplateVersion = template.Version
+
+	if err := s.SetServerTemplate(server, template); err != nil {
+		return fmt.Errorf("failed to store template config: %w", err)
+	}
+
+	if err := s.db.Save(server).Error; err != nil {
+		return fmt.Errorf("failed to update server: %w", err)
+	}
+
+	if isRunning {
+		if err := s.Start(id); err != nil {
+			return fmt.Errorf("server upgraded but failed to restart: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (s *ServerService) GetPortsFromTemplate(template GameTemplate, mainPort int) []int {
+	ports := []int{mainPort}
+	for _, p := range template.AdditionalPorts {
+		ports = append(ports, p.Port)
+	}
+	return ports
+}
+
+func (s *ServerService) GetAllUsedPorts(excludeServerID string) (map[int]struct{}, error) {
+	used := make(map[int]struct{})
+	servers, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+
+	templateCache := make(map[string]GameTemplate)
+
+	for _, srv := range servers {
+		if srv.ID == excludeServerID {
+			continue
+		}
+
+		used[srv.Port] = struct{}{}
+
+		var template GameTemplate
+		var ok bool
+
+		if srv.TemplateConfig != "" {
+			if err := json.Unmarshal([]byte(srv.TemplateConfig), &template); err == nil {
+				ok = true
+			}
+		} else {
+			if cached, found := templateCache[srv.GameType]; found {
+				template = cached
+				ok = true
+			} else if template, ok = s.templates.Get(srv.GameType); ok {
+				templateCache[srv.GameType] = template
+			}
+		}
+
+		if !ok {
+			continue
+		}
+
+		for _, p := range template.AdditionalPorts {
+			used[p.Port] = struct{}{}
+		}
+	}
+	return used, nil
 }

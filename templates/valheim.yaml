@@ -1,0 +1,20 @@
+id: valheim
+name: Valheim
+version: "1.0.0"
+docker_image: lloesche/valheim-server:latest
+default_port: 2456
+default_memory: 4096
+protocol: udp
+environment:
+  SERVER_NAME: "My Valheim Server"
+  WORLD_NAME: "Dedicated"
+  SERVER_PASS: "secret"
+additional_ports:
+  - port: 2457
+    protocol: udp
+    purpose: query
+stop_timeout: 30
+var_descriptions:
+  SERVER_NAME: "Server name shown in browser"
+  WORLD_NAME: "World save name"
+  SERVER_PASS: "Password to join (min 5 characters)"

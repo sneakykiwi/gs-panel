@@ -1,0 +1,209 @@
+package admin
+
+import (
+	"github.com/sneakykiwi/gs-panel/internal/models"
+	"github.com/sneakykiwi/gs-panel/internal/services"
+	"github.com/sneakykiwi/gs-panel/views/layouts"
+	"github.com/sneakykiwi/gs-panel/views/components"
+)
+
+templ TemplateEditPage(user *models.User, template services.GameTemplate, yamlContent string, errorMsg string) {
+    @layouts.Base("Edit Template - " + template.Name, user) {
+       <div class="flex h-screen">
+          @components.Sidebar(user)
+
+          <main class="flex-1 p-8 overflow-auto">
+             <div class="mb-6">
+                <a href="/admin/templates" class="text-gray-400 hover:text-white text-sm">
+                   ← Back to Templates
+                </a>
+             </div>
+
+             <div class="flex justify-between items-center mb-8">
+                <div>
+                   <h1 class="text-3xl font-bold">Edit Template</h1>
+                   <p class="text-gray-400">{ template.Name } ({ template.ID })</p>
+                </div>
+             </div>
+
+             @TemplateYAMLForm(template.ID, yamlContent, errorMsg, "/admin/templates/" + template.ID + "/edit", "Save Changes")
+          </main>
+       </div>
+    }
+}
+
+templ TemplateClonePage(user *models.User, source services.GameTemplate, yamlContent string, errorMsg string) {
+    @layouts.Base("Clone Template - " + source.Name, user) {
+       <div class="flex h-screen">
+          @components.Sidebar(user)
+
+          <main class="flex-1 p-8 overflow-auto">
+             <div class="mb-6">
+                <a href="/admin/templates" class="text-gray-400 hover:text-white text-sm">
+                   ← Back to Templates
+                </a>
+             </div>
+
+             <div class="flex justify-between items-center mb-8">
+                <div>
+                   <h1 class="text-3xl font-bold">Clone Template</h1>
+                   <p class="text-gray-400">Creating new template from { source.Name }</p>
+                </div>
+             </div>
+
+             <div class="mb-6 bg-blue-500/20 border border-blue-500 text-blue-300 px-4 py-3 rounded">
+                <p class="font-medium">ℹ️ Cloning a Template</p>
+                <p class="text-sm">Change the <code class="bg-gray-700 px-1 rounded">id</code> and <code class="bg-gray-700 px-1 rounded">name</code> fields to create your custom version.</p>
+             </div>
+
+             @TemplateYAMLForm(source.ID, yamlContent, errorMsg, "/admin/templates/" + source.ID + "/clone", "Create Clone")
+          </main>
+       </div>
+    }
+}
+
+templ TemplateCreatePage(user *models.User, yamlContent string, errorMsg string) {
+    @layouts.Base("New Template", user) {
+       <div class="flex h-screen">
+          @components.Sidebar(user)
+
+          <main class="flex-1 p-8 overflow-auto">
+             <div class="mb-6">
+                <a href="/admin/templates" class="text-gray-400 hover:text-white text-sm">
+                   ← Back to Templates
+                </a>
+             </div>
+
+             <h1 class="text-3xl font-bold mb-8">New Template</h1>
+
+             @TemplateYAMLForm("", yamlContent, errorMsg, "/admin/templates/new", "Create Template")
+          </main>
+       </div>
+    }
+}
+
+templ TemplateYAMLForm(templateID string, yamlContent string, errorMsg string, action string, submitText string) {
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.css"/>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/theme/dracula.min.css"/>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/yaml/yaml.min.js"></script>
+
+	<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+		<div class="lg:col-span-2">
+			<form id="yaml-form" method="POST" action={ templ.URL(action) }>
+				if errorMsg != "" {
+					<div class="mb-6 bg-red-500/20 border border-red-500 text-red-300 px-4 py-3 rounded">
+						{ errorMsg }
+					</div>
+				}
+
+				<div class="mb-6">
+					<label class="block text-sm font-medium mb-2">YAML Configuration</label>
+					<textarea
+						id="yaml-editor"
+						name="yaml_content"
+						rows="30"
+						class="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+						spellcheck="false"
+					>{ yamlContent }</textarea>
+				</div>
+
+				<div class="flex gap-3">
+					<button
+						type="submit"
+						class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded transition"
+					>
+						{ submitText }
+					</button>
+					<a
+						href="/admin/templates"
+						class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded transition inline-block"
+					>
+						Cancel
+					</a>
+				</div>
+			</form>
+		</div>
+
+		<div class="space-y-4">
+			<div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+				<h3 class="font-medium mb-3 flex items-center gap-2">
+					<svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+					</svg>
+					Template Variables
+				</h3>
+				<p class="text-gray-400 text-xs mb-4">Use these in environment values. They get replaced when the server starts.</p>
+
+				<div class="space-y-3">
+					@VariableCard("{{MEMORY}}", "Memory Limit", "Replaced with the server's memory limit in MB (e.g., 2048)")
+					@VariableCard("{{PORT}}", "Server Port", "Replaced with the server's assigned port number")
+					@VariableCard("{{SERVER_ID}}", "Server ID", "Replaced with the unique server identifier (UUID)")
+					@VariableCard("{{SERVER_NAME}}", "Server Name", "Replaced with the server's display name")
+				</div>
+			</div>
+
+			<div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+				<h3 class="font-medium mb-3 flex items-center gap-2">
+					<svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+					</svg>
+					Required Fields
+				</h3>
+				<ul class="text-sm text-gray-400 space-y-1">
+					<li><code class="bg-gray-700 px-1 rounded text-xs">id</code> - Unique template identifier</li>
+					<li><code class="bg-gray-700 px-1 rounded text-xs">docker_image</code> - Docker image to use</li>
+				</ul>
+			</div>
+
+			<div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+				<h3 class="font-medium mb-3 flex items-center gap-2">
+					<svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+					</svg>
+					Example
+				</h3>
+				<pre class="text-xs bg-gray-900 p-3 rounded overflow-x-auto"><code class="text-gray-300">environment:
+  MAX_MEMORY: "{"{{MEMORY}}"}M"
+  SERVER_PORT: "{"{{PORT}}"}"
+  EULA: "TRUE"</code></pre>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		var editor = CodeMirror.fromTextArea(document.getElementById("yaml-editor"), {
+			lineNumbers: true,
+			mode: "yaml",
+			theme: "dracula",
+			tabSize: 2,
+			indentWithTabs: false,
+			extraKeys: {"Tab": "indentMore", "Shift-Tab": "indentLess"},
+			viewportMargin: Infinity
+		});
+		editor.setSize("100%", null);
+		document.getElementById("yaml-form").onsubmit = function() {
+			editor.save();
+		};
+	</script>
+}
+
+templ VariableCard(variable string, name string, description string) {
+	<div class="bg-gray-900 rounded p-3" x-data="{ copied: false }">
+		<div class="flex items-center justify-between mb-1">
+			<span class="text-sm font-medium text-blue-400">{ name }</span>
+			<button
+				type="button"
+				@click="navigator.clipboard.writeText($el.dataset.variable); copied = true; setTimeout(() => copied = false, 1500)"
+				data-variable={ variable }
+				class="text-xs text-gray-500 hover:text-white transition"
+				:class="copied ? 'text-green-400' : ''"
+			>
+				<span x-show="!copied">Copy</span>
+				<span x-show="copied" x-cloak>Copied!</span>
+			</button>
+		</div>
+		<code class="text-xs bg-gray-800 px-2 py-1 rounded block mb-2 text-yellow-300">{ variable }</code>
+		<p class="text-xs text-gray-500">{ description }</p>
+	</div>
+}
