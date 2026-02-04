@@ -34,10 +34,10 @@ RUN adduser -D -h /data gs-panel
 WORKDIR /data
 
 COPY --from=builder /build/gs-panel /usr/local/bin/gs-panel
-
 COPY --from=builder /build/web /data/web
+COPY --from=builder /build/templates /data/templates
 
-RUN mkdir -p /data/servers /data/backups /data/logs && \
+RUN mkdir -p /data/servers /data/backups /data/logs /data/user-templates && \
     chown -R gs-panel:gs-panel /data
 
 USER gs-panel

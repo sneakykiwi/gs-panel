@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   gs-panel:
-    build: .
+    image: ghcr.io/sneakykiwi/gs-panel:master
     container_name: gs-panel
     restart: unless-stopped
     ports:
@@ -10,10 +10,13 @@ services:
     volumes:
       - gs-panel-data:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./templates:/data/user-templates:ro
     environment:
       - GS_PANEL_STORAGE_SERVERS=/data/servers
       - GS_PANEL_STORAGE_BACKUPS=/data/backups
       - GS_PANEL_STORAGE_LOGS=/data/logs
+      - GS_PANEL_STORAGE_DEFAULT_TEMPLATES=/data/templates
+      - GS_PANEL_STORAGE_USER_TEMPLATES=/data/user-templates
       - GS_PANEL_DATABASE_PATH=/data/gs-panel.db
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
