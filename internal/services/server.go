@@ -64,14 +64,25 @@ func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, te
 func (s *ServerService) GetServerTemplate(server *models.Server) (GameTemplate, bool) {
 	if server.TemplateConfig != "" {
 		var template GameTemplate
-		if err := json.Unmarshal([]byte(server.TemplateConfig), &template); err == nil {
-			return template, true
+		if err := json.Unmarshal([]byte(server.TemplateConfig), &template); err != nil {
+			logger.Warn().Str("server_id", server.ID).Msg("Failed to parse stored template config, falling back to template files")
+		} else {
+			serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
+			if err := s.templates.ValidateTemplate(&template, serverPath); err != nil {
+				logger.Warn().Str("server_id", server.ID).Err(err).Msg("Stored template config failed validation, falling back")
+			} else {
+				return template, true
+			}
 		}
-		logger.Warn().Str("server_id", server.ID).Msg("Failed to parse stored template config, falling back to template files")
 	}
 
 	template, ok := s.templates.Get(server.GameType)
 	if ok {
+		serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
+		if err := s.templates.ValidateTemplate(&template, serverPath); err != nil {
+			logger.Warn().Str("server_id", server.ID).Err(err).Msg("Failed to validate template, not setting")
+			return GameTemplate{}, false
+		}
 		s.SetServerTemplate(server, template)
 		s.db.Save(server)
 	}
@@ -119,6 +130,17 @@ func (s *ServerService) Create(req CreateServerRequest) (*models.Server, error) 
 	serverID := uuid.Must(uuid.NewV7()).String()
 	serverPath := filepath.Join(s.cfg.Storage.Servers, serverID)
 	if err := os.MkdirAll(serverPath, 0755); err != nil {
+		return nil, err
+	}
+
+	if err := s.templates.ValidateTemplate(&template, serverPath); err != nil {
+		os.RemoveAll(serverPath)
+		return nil, err
+	}
+
+	proposedPorts := s.GetPortsFromTemplate(template, req.Port)
+	if err := s.ValidatePorts(proposedPorts, ""); err != nil {
+		os.RemoveAll(serverPath)
 		return nil, err
 	}
 
@@ -554,14 +576,40 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 		return err
 	}
 
-	if req.Port != server.Port {
-		if err := s.ValidatePort(req.Port, id); err != nil {
-			return err
+	template, ok := s.GetServerTemplate(server)
+	if !ok {
+		return fmt.Errorf("no template found for server")
+	}
+
+	proposedPort := req.Port
+	if proposedPort == 0 {
+		proposedPort = server.Port
+	}
+
+	proposedPorts := s.GetPortsFromTemplate(template, proposedPort)
+	if err := s.ValidatePorts(proposedPorts, id); err != nil {
+		return err
+	}
+
+	// Check if custom variables have actually changed
+	currentCustomVars := s.templates.DecodeEnvironment(server.CustomEnvironment)
+	customVarsChanged := false
+	if req.CustomVars != nil {
+		if len(currentCustomVars) != len(req.CustomVars) {
+			customVarsChanged = true
+		} else {
+			for k, v := range req.CustomVars {
+				cv, ok := currentCustomVars[k]
+				if !ok || cv != v {
+					customVarsChanged = true
+					break
+				}
+			}
 		}
 	}
 
 	isRunning := server.Status == models.ServerStatusRunning
-	needsRestart := isRunning && (req.Port != server.Port || req.MemoryLimit != server.MemoryLimit || len(req.CustomVars) > 0)
+	needsRestart := isRunning && (proposedPort != server.Port || req.MemoryLimit != server.MemoryLimit || customVarsChanged)
 
 	if needsRestart {
 		if err := s.Stop(id); err != nil {
@@ -571,7 +619,7 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 
 	server.Name = req.Name
 	server.MemoryLimit = req.MemoryLimit
-	server.Port = req.Port
+	server.Port = proposedPort
 
 	env := s.templates.DecodeEnvironment(server.Environment)
 	for k, v := range env {
@@ -596,14 +644,15 @@ func (s *ServerService) Update(id string, req UpdateServerRequest) error {
 	return nil
 }
 
-func (s *ServerService) ValidatePort(port int, excludeServerID string) error {
-	var count int64
-	s.db.Model(&models.Server{}).
-		Where("port = ? AND id != ? AND deleted_at IS NULL", port, excludeServerID).
-		Count(&count)
-
-	if count > 0 {
-		return errors.New("port already in use by another server")
+func (s *ServerService) ValidatePorts(ports []int, excludeServerID string) error {
+	usedPorts, err := s.GetAllUsedPorts(excludeServerID)
+	if err != nil {
+		return err
+	}
+	for _, p := range ports {
+		if _, ok := usedPorts[p]; ok {
+			return fmt.Errorf("port %d is already in use", p)
+		}
 	}
 	return nil
 }
@@ -640,6 +689,16 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 		return fmt.Errorf("unknown game type: %s", server.GameType)
 	}
 
+	serverPath := filepath.Join(s.cfg.Storage.Servers, server.ID)
+	if err := s.templates.ValidateTemplate(&template, serverPath); err != nil {
+		return err
+	}
+
+	proposedPorts := s.GetPortsFromTemplate(template, server.Port)
+	if err := s.ValidatePorts(proposedPorts, server.ID); err != nil {
+		return err
+	}
+
 	if server.TemplateVersion == template.Version {
 		return nil
 	}
@@ -668,13 +727,11 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 		env[k] = v
 	}
 
-	// Preserve and re-apply any custom environment overrides when upgrading the template.
-	if server.CustomEnvironment != "" {
-		customEnv := s.templates.DecodeEnvironment(server.CustomEnvironment)
-		for k, v := range customEnv {
-			env[k] = v
-		}
-	}
+  if server.CustomEnvironment != "" {
+      for k, v := range s.templates.DecodeEnvironment(server.CustomEnvironment) {
+          env[k] = v
+      }
+  }
 	server.Environment = s.templates.EncodeEnvironment(env)
 	server.DockerImage = template.DockerImage
 	server.TemplateVersion = template.Version
@@ -694,4 +751,34 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 	}
 
 	return nil
+}
+
+func (s *ServerService) GetPortsFromTemplate(template GameTemplate, mainPort int) []int {
+	ports := []int{mainPort}
+	for _, p := range template.AdditionalPorts {
+		ports = append(ports, p.Port)
+	}
+	return ports
+}
+
+func (s *ServerService) GetAllUsedPorts(excludeServerID string) (map[int]struct{}, error) {
+	used := make(map[int]struct{})
+	servers, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, srv := range servers {
+		if srv.ID == excludeServerID {
+			continue
+		}
+		template, ok := s.GetServerTemplate(&srv)
+		if !ok {
+			continue
+		}
+		ports := s.GetPortsFromTemplate(template, srv.Port)
+		for _, p := range ports {
+			used[p] = struct{}{}
+		}
+	}
+	return used, nil
 }

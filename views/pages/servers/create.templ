@@ -38,7 +38,7 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 							<div class="grid grid-cols-2 md:grid-cols-3 gap-3">
 								for _, t := range templates {
 									<label class="cursor-pointer">
-										<input type="radio" name="game_type" value={ t.ID } class="sr-only peer" required x-on:change={ fmt.Sprintf("selected = '%s'", t.ID) }/>
+										<input type="radio" name="game_type" value={ t.ID } class="sr-only peer" required x-on:change="selected = $event.target.value"/>
 										<div class="p-4 bg-gray-700 border border-gray-600 rounded hover:border-blue-500 peer-checked:border-blue-500 peer-checked:bg-blue-500/10 transition">
 											<p class="font-medium">{ t.Name }</p>
 											<p class="text-sm text-gray-400">Port: { fmt.Sprintf("%d", t.DefaultPort) }</p>
@@ -63,7 +63,7 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 							<h3 class="text-lg font-medium mb-4">Environment Variables</h3>
 							for _, t := range templates {
 								if len(t.Environment) > 0 {
-									<div x-show={ fmt.Sprintf("selected === '%s'", t.ID) } class="space-y-4">
+									<div x-show={ fmt.Sprintf("selected === $el.dataset.templateId") } data-template-id={ t.ID } class="space-y-4">
 										for key, value := range t.Environment {
 											<div>
 												<label class="block text-sm font-medium mb-1">
