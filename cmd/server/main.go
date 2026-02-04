@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/sneakykiwi/gs-panel/internal/config"
 	"github.com/sneakykiwi/gs-panel/internal/database"
@@ -16,6 +18,8 @@ import (
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/extractors"
+	"github.com/gofiber/fiber/v3/middleware/csrf"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/moby/moby/client"
 )
@@ -76,24 +80,40 @@ func main() {
 	app.Use(middleware.GlobalLimiter())
 	app.Use("/static", static.New(staticPath))
 
-	//app.Use(csrf.New(csrf.Config{
-	//	CookieName:     "csrf_",
-	//	CookieSameSite: "Lax",
-	//	CookieSecure:   false,
-	//	CookieHTTPOnly: true,
-	//	Extractor:      extractors.FromHeader("X-Csrf-Token"),
-	//	Next: func(c fiber.Ctx) bool {
-	//		path := c.Path()
-	//		// Skip CSRF for login/setup pages and static assets
-	//		return path == "/login" || path == "/setup" || path == "/logout" ||
-	//			len(path) > 8 && path[:8] == "/static/"
-	//	},
-	//	ErrorHandler: func(c fiber.Ctx, err error) error {
-	//		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-	//			"error": "CSRF token validation failed",
-	//		})
-	//	},
-	//}))
+	app.Use(csrf.New(csrf.Config{
+		CookieName:     "_csrf",
+		CookieSameSite: "Lax",
+		CookieSecure:   false,
+		CookieHTTPOnly: false, // Must be false so JS can read cookie for HTMX header
+		IdleTimeout:    24 * time.Hour,
+		Extractor: extractors.Chain(
+			extractors.FromHeader("X-Csrf-Token"),
+			extractors.FromForm("csrf_token"),
+		),
+		Next: func(c fiber.Ctx) bool {
+			path := c.Path()
+			// Skip CSRF for static assets, version endpoint, and WebSocket upgrades
+			return strings.HasPrefix(path, "/static/") ||
+				path == "/version" ||
+				strings.HasSuffix(path, "/ws")
+		},
+		ErrorHandler: func(c fiber.Ctx, err error) error {
+			// Return HTML for browser/HTMX requests
+			if strings.Contains(c.Get("Accept"), "text/html") {
+				c.Set("HX-Retarget", "#toast-container")
+				c.Set("HX-Reswap", "beforeend")
+				return c.Status(fiber.StatusForbidden).SendString(`
+					<div class="bg-red-500/20 border border-red-500 text-red-300 px-4 py-3 rounded mb-2 flex items-center gap-2">
+						<span class="font-bold">✕</span>
+						<span>Session expired. Please refresh the page and try again.</span>
+					</div>
+				`)
+			}
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "CSRF token validation failed",
+			})
+		},
+	}))
 
 	authHandler := handlers.NewAuthHandler(authService)
 	serverHandler := handlers.NewServerHandler(serverService, templateService)

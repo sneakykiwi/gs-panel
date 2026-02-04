@@ -1,0 +1,15 @@
+package components
+
+import "context"
+
+func csrfToken(ctx context.Context) string {
+	if token, ok := ctx.Value("csrf_token").(string); ok {
+		return token
+	}
+	return ""
+}
+
+// CsrfToken renders a hidden input field with the CSRF token from context
+templ CsrfToken() {
+	<input type="hidden" name="csrf_token" value={ csrfToken(ctx) }/>
+}

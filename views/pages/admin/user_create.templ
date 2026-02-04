@@ -22,6 +22,7 @@ templ UserCreatePage(user *models.User, errorMsg string) {
 					}
 
 					<form method="POST" action="/admin/users" class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+						@components.CsrfToken()
 						<div class="mb-6">
 							<label class="block text-sm font-medium mb-2" for="email">Email</label>
 							<input type="email" id="email" name="email" required

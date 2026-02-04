@@ -24,6 +24,7 @@ templ CreatePage(user *models.User, templates []services.GameTemplate, errorMsg 
 					}
 
 					<form method="POST" action="/servers" class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+						@components.CsrfToken()
 						<div class="mb-6">
 							<label class="block text-sm font-medium mb-2" for="name">Server Name</label>
 							<input type="text" id="name" name="name" required
