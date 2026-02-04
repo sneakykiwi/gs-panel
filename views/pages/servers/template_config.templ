@@ -46,7 +46,7 @@ templ TemplateConfigPage(server *models.Server, user *models.User, yamlContent s
 						<span class="text-sm font-medium text-gray-300">template.yaml</span>
 						<button
 							type="button"
-							onclick="navigator.clipboard.writeText(document.getElementById('yaml-content').textContent)"
+							onclick="navigator.clipboard.writeText(templateEditor.getValue())"
 							class="text-xs text-gray-400 hover:text-white transition flex items-center gap-1"
 						>
 							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -55,9 +55,29 @@ templ TemplateConfigPage(server *models.Server, user *models.User, yamlContent s
 							Copy
 						</button>
 					</div>
-					<pre id="yaml-content" class="p-4 text-sm font-mono text-gray-300 overflow-x-auto whitespace-pre">{ yamlContent }</pre>
+					<textarea id="yaml-content" class="hidden">{ yamlContent }</textarea>
+					<div id="yaml-editor-container"></div>
 				</div>
+
+				<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.css"/>
+				<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/theme/dracula.min.css"/>
+				<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.js"></script>
+				<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/yaml/yaml.min.js"></script>
+				@templateViewerScript()
 			</main>
 		</div>
 	}
 }
+
+script templateViewerScript() {
+	var templateEditor = CodeMirror(document.getElementById("yaml-editor-container"), {
+		value: document.getElementById("yaml-content").value,
+		lineNumbers: true,
+		mode: "yaml",
+		theme: "dracula",
+		readOnly: true,
+		viewportMargin: Infinity
+	});
+	templateEditor.setSize("100%", null);
+}
+
