@@ -667,6 +667,15 @@ func (s *ServerService) UpgradeTemplate(id string) error {
 		v = strings.ReplaceAll(v, "{{SERVER_NAME}}", server.Name)
 		env[k] = v
 	}
+
+	// Preserve and re-apply any custom environment overrides when upgrading the template.
+	if server.CustomEnvironment != "" {
+		if customEnv, err := s.templates.DecodeEnvironment(server.CustomEnvironment); err == nil {
+			for k, v := range customEnv {
+				env[k] = v
+			}
+		}
+	}
 	server.Environment = s.templates.EncodeEnvironment(env)
 	server.DockerImage = template.DockerImage
 	server.TemplateVersion = template.Version
