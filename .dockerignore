@@ -37,6 +37,7 @@ servers/
 backups/
 logs/
 *.db
+gs-panel/
 
 # Dependencies (downloaded in build)
 vendor/
