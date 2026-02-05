@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   gs-panel:
-    build: .
+    image: 'ghcr.io/sneakykiwi/gs-panel:master'
     container_name: gs-panel
     restart: unless-stopped
     ports:
