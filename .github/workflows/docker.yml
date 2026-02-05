@@ -6,6 +6,8 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
+  release:
+    types: [ published ]
 
 env:
   REGISTRY: ghcr.io
