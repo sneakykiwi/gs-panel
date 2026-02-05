@@ -9,7 +9,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,111 +89,20 @@ func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, te
 	}
 }
 
-func (s *ServerService) getSelfContainerID() (string, error) {
-	data, err := os.ReadFile("/proc/self/cgroup")
-	if err != nil {
-		return "", err
-	}
-	lines := strings.Split(string(data), "\n")
-	idRegex := regexp.MustCompile(`[0-9a-fA-F]{64}`)
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		matches := idRegex.FindAllString(line, -1)
-		if len(matches) > 0 {
-			return matches[len(matches)-1], nil
-		}
-	}
-	return "", fmt.Errorf("no container ID found in cgroups")
-}
-
-func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
-	if _, err := os.Stat("/.dockerenv"); os.IsNotExist(err) {
-		logger.Info().Msg("Not running in Docker (no /.dockerenv), using container paths directly")
-		return "", nil
-	}
-
-	containerID, err := s.getSelfContainerID()
-	if err != nil {
-		logger.Warn().Err(err).Msg("Failed to get self container ID, falling back to mountinfo")
-	} else {
-		inspect, err := s.docker.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
-		if err != nil {
-			logger.Warn().Err(err).Msg("Failed to inspect self container, falling back to mountinfo")
-		} else {
-			for _, m := range inspect.Container.Mounts {
-				if m.Destination == "/data" {
-					logger.Info().Str("host_base_path", m.Source).Msg("Successfully detected host path via Docker inspect")
-					return m.Source, nil
-				}
-			}
-			logger.Warn().Msg("No /data mount found in self inspect, falling back to mountinfo")
-		}
-	}
-
-	data, err := os.ReadFile("/proc/self/mountinfo")
-	if err != nil {
-		logger.Warn().Err(err).Msg("Failed to read /proc/self/mountinfo, falling back to native paths")
-		return "", nil
-	}
-
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 10 {
-			continue
-		}
-
-		destination := fields[4]
-		if destination == "/data" {
-			for j := 5; j < len(fields); j++ {
-				if fields[j] == "-" {
-					if j+2 < len(fields) {
-						source := fields[j+2]
-						if strings.HasPrefix(source, "/dev/") {
-							logger.Warn().Str("source", source).Msg("Detected device as source for /data, likely named volume; cannot translate accurately with mountinfo")
-							return "", fmt.Errorf("invalid mount source for path translation: %s", source)
-						}
-						logger.Info().Str("host_base_path", source).Msg("Successfully detected host path for /data")
-						return source, nil
-					}
-					break
-				}
-			}
-		}
-	}
-
-	logger.Warn().Msg("Could not find exact /data mount in /proc/self/mountinfo, falling back to native mode")
-	return "", nil
-}
-
-func (s *ServerService) translatePathForDocker(ctx context.Context, containerPath string) (string, error) {
-	hostBase, err := s.getHostBasePath(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	if hostBase == "" || !strings.HasPrefix(containerPath, "/data") {
-		logger.Info().Str("path", containerPath).Msg("Path translation skipped (native mode or not under /data)")
-		return containerPath, nil
+func (s *ServerService) translatePath(containerPath string) string {
+	if s.cfg.Docker.HostDataPath == "" || !strings.HasPrefix(containerPath, "/data") {
+		return containerPath
 	}
 
 	relativePath := strings.TrimPrefix(containerPath, "/data")
-	if relativePath != "" && !strings.HasPrefix(relativePath, "/") {
-		relativePath = "/" + relativePath
-	}
-	hostPath := filepath.Join(hostBase, relativePath)
+	hostPath := filepath.Join(s.cfg.Docker.HostDataPath, relativePath)
 
 	logger.Info().
 		Str("container_path", containerPath).
 		Str("host_path", hostPath).
-		Msg("Translated path for Docker bind mount")
+		Msg("Translated container path to host path")
 
-	return hostPath, nil
+	return hostPath
 }
 
 func (s *ServerService) CheckImageExists(ctx context.Context, image string) (bool, error) {
@@ -799,12 +707,7 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 	backupPath := filepath.Join(serverPath, "../backups")
 	logsPath := filepath.Join(serverPath, "../logs")
 
-	// Translate container paths to host paths when running in Docker
-	// This is necessary because Docker bind mounts require host-side paths
-	serverHostPath, err := s.translatePathForDocker(ctx, serverPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to translate server path for Docker: %w", err)
-	}
+	serverHostPath := s.translatePath(serverPath)
 
 	mounts := []mount.Mount{
 		{
@@ -821,11 +724,7 @@ func (s *ServerService) createContainer(ctx context.Context, server *models.Serv
 		}
 		hostPath = filepath.Clean(hostPath)
 
-		// Translate path for Docker if needed
-		hostMountPath, err := s.translatePathForDocker(ctx, hostPath)
-		if err != nil {
-			return "", fmt.Errorf("failed to translate volume path for Docker: %w", err)
-		}
+		hostMountPath := s.translatePath(hostPath)
 
 		readOnly := strings.ToLower(vol.Mode) == "ro"
 		mounts = append(mounts, mount.Mount{
