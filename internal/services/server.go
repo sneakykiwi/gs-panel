@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -89,11 +90,47 @@ func NewServerService(db *gorm.DB, docker *client.Client, cfg *config.Config, te
 	}
 }
 
+func (s *ServerService) getSelfContainerID() (string, error) {
+	data, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(string(data), "\n")
+	idRegex := regexp.MustCompile(`[0-9a-fA-F]{64}`)
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		matches := idRegex.FindAllString(line, -1)
+		if len(matches) > 0 {
+			return matches[len(matches)-1], nil
+		}
+	}
+	return "", fmt.Errorf("no container ID found in cgroups")
+}
+
 func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
-	// Quick check if we're even in Docker
 	if _, err := os.Stat("/.dockerenv"); os.IsNotExist(err) {
 		logger.Info().Msg("Not running in Docker (no /.dockerenv), using container paths directly")
 		return "", nil
+	}
+
+	containerID, err := s.getSelfContainerID()
+	if err != nil {
+		logger.Warn().Err(err).Msg("Failed to get self container ID, falling back to mountinfo")
+	} else {
+		inspect, err := s.docker.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+		if err != nil {
+			logger.Warn().Err(err).Msg("Failed to inspect self container, falling back to mountinfo")
+		} else {
+			for _, m := range inspect.Container.Mounts {
+				if m.Destination == "/data" {
+					logger.Info().Str("host_base_path", m.Source).Msg("Successfully detected host path via Docker inspect")
+					return m.Source, nil
+				}
+			}
+			logger.Warn().Msg("No /data mount found in self inspect, falling back to mountinfo")
+		}
 	}
 
 	data, err := os.ReadFile("/proc/self/mountinfo")
@@ -112,13 +149,16 @@ func (s *ServerService) getHostBasePath(ctx context.Context) (string, error) {
 			continue
 		}
 
-		destination := fields[4] // mount destination in container
+		destination := fields[4]
 		if destination == "/data" {
-			// Find the index of the separator "-"
 			for j := 5; j < len(fields); j++ {
 				if fields[j] == "-" {
 					if j+2 < len(fields) {
 						source := fields[j+2]
+						if strings.HasPrefix(source, "/dev/") {
+							logger.Warn().Str("source", source).Msg("Detected device as source for /data, likely named volume; cannot translate accurately with mountinfo")
+							return "", fmt.Errorf("invalid mount source for path translation: %s", source)
+						}
 						logger.Info().Str("host_base_path", source).Msg("Successfully detected host path for /data")
 						return source, nil
 					}
